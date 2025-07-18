@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/openbnb-org-mcp-server-airbnb-badge.png)](https://mseep.ai/app/openbnb-org-mcp-server-airbnb)
+
 # Airbnb MCP Server
 [![smithery badge](https://smithery.ai/badge/@openbnb-org/mcp-server-airbnb)](https://smithery.ai/server/@openbnb-org/mcp-server-airbnb)
 
