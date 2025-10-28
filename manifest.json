@@ -45,6 +45,10 @@
     {
       "name": "airbnb_listing_details",
       "description": "Get detailed information about a specific Airbnb listing including amenities, policies, location details, and highlights."
+    },
+    {
+      "name": "airbnb_listing_reviews",
+      "description": "Fetch public Airbnb listing reviews, including reviewer name, date, rating, and comments. Supports pagination (24 reviews per page). Requires an API key that can be obtained from the listing details response."
     }
   ],
   "tools_generated": false,
