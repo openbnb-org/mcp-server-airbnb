@@ -324,6 +324,9 @@ async function handleAirbnbSearch(params: any) {
     },
     badges: {
       text: true,
+      loggingContext: {
+        badgeType: true,
+      },
     },
     structuredContent: {
       mapCategoryInfo: {
@@ -531,6 +534,18 @@ async function handleAirbnbListingDetails(params: any) {
         title: true,
         amenities: {
           title: true
+        }
+      }
+    },
+    "MEET_YOUR_HOST": {
+      cardData: {
+        name: true,
+        titleText: true,
+        isSuperhost: true,
+        isVerified: true,
+        stats: {
+          label: true,
+          value: true
         }
       }
     },
