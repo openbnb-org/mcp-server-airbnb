@@ -103,6 +103,7 @@ Search for Airbnb listings with comprehensive filtering options.
 - `minPrice` (optional): Minimum price per night
 - `maxPrice` (optional): Maximum price per night
 - `cursor` (optional): Pagination cursor for browsing results
+- `propertyType` (optional): Filter by property type — `entire_home`, `private_room`, `shared_room`, or `hotel_room`
 - `ignoreRobotsText` (optional): Override robots.txt for this request
 
 **Returns:**

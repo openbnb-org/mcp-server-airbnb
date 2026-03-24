@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema } from "./util.js";
+import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath } from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -82,6 +82,11 @@ const AIRBNB_SEARCH_TOOL: Tool = {
       cursor: {
         type: "string",
         description: "Base64-encoded string used for Pagination"
+      },
+      propertyType: {
+        type: "string",
+        enum: ["entire_home", "private_room", "shared_room", "hotel_room"],
+        description: "Filter by property type: 'entire_home' (entire homes/apartments), 'private_room' (private rooms in shared homes), 'shared_room' (shared/dorm-style rooms), 'hotel_room' (hotel rooms)"
       },
       ignoreRobotsText: {
         type: "boolean",
@@ -204,6 +209,13 @@ async function geocodeLocation(location: string): Promise<{
   }
 }
 
+const PROPERTY_TYPE_IDS: Record<string, string> = {
+  entire_home:  "1",
+  private_room: "2",
+  shared_room:  "3",
+  hotel_room:   "4",
+};
+
 // Configuration from environment variables (set by DXT host)
 const IGNORE_ROBOTS_TXT = process.env.IGNORE_ROBOTS_TXT === "true" || process.argv.slice(2).includes("--ignore-robots-txt");
 
@@ -317,6 +329,7 @@ async function handleAirbnbSearch(params: any) {
     minPrice,
     maxPrice,
     cursor,
+    propertyType,
     ignoreRobotsText = false,
   } = params;
 
@@ -359,11 +372,10 @@ async function handleAirbnbSearch(params: any) {
   if (minPrice) searchUrl.searchParams.append("price_min", minPrice.toString());
   if (maxPrice) searchUrl.searchParams.append("price_max", maxPrice.toString());
   
-  // Add room type
-  // if (roomType) {
-  //   const roomTypeParam = roomType.toLowerCase().replace(/\s+/g, '_');
-  //   searchUrl.searchParams.append("room_types[]", roomTypeParam);
-  // }
+  // Add property type filter
+  if (propertyType && PROPERTY_TYPE_IDS[propertyType]) {
+    searchUrl.searchParams.append("l2_property_type_ids[]", PROPERTY_TYPE_IDS[propertyType]);
+  }
 
   // Add cursor for pagination
   if (cursor) {
@@ -442,6 +454,7 @@ async function handleAirbnbSearch(params: any) {
     const $ = cheerio.load(html);
     
     let staysSearchResults: any = {};
+    let scriptContent = '';
     
     try {
       const scriptElement = $("#data-deferred-state-0").first();
@@ -449,13 +462,13 @@ async function handleAirbnbSearch(params: any) {
         throw new Error("Could not find data script element - page structure may have changed");
       }
       
-      const scriptContent = $(scriptElement).text();
+      scriptContent = $(scriptElement).text();
       if (!scriptContent) {
         throw new Error("Data script element is empty");
       }
       
-      const clientData = JSON.parse(scriptContent).niobeClientData[0][1];
-      const results = clientData.data.presentation.staysSearch.results;
+      const clientData = JSON.parse(scriptContent);
+      const results = clientData.niobeClientData[0][1].data.presentation.staysSearch.results;
       cleanObject(results);
       
       staysSearchResults = {
@@ -472,8 +485,14 @@ async function handleAirbnbSearch(params: any) {
         resultCount: staysSearchResults.searchResults?.length || 0 
       });
     } catch (parseError) {
+      let parsedRaw: any = null;
+      try { parsedRaw = JSON.parse(scriptContent); } catch (_) {}
+      const searchPath = ['niobeClientData', '0', '1', 'data', 'presentation', 'staysSearch', 'results'];
+      const diagnosis = parsedRaw ? diagnoseJsonPath(parsedRaw, searchPath) : 'Could not parse script content as JSON';
+
       log('error', 'Failed to parse search results', {
         error: parseError instanceof Error ? parseError.message : String(parseError),
+        diagnosis,
         url: searchUrl.toString()
       });
       
@@ -483,6 +502,7 @@ async function handleAirbnbSearch(params: any) {
           text: JSON.stringify({
             error: "Failed to parse search results from Airbnb. The page structure may have changed.",
             details: parseError instanceof Error ? parseError.message : String(parseError),
+            diagnosis,
             searchUrl: searchUrl.toString()
           }, null, 2)
         }],
@@ -616,6 +636,7 @@ async function handleAirbnbListingDetails(params: any) {
     const $ = cheerio.load(html);
     
     let details = {};
+    let scriptContent = '';
     
     try {
       const scriptElement = $("#data-deferred-state-0").first();
@@ -623,13 +644,13 @@ async function handleAirbnbListingDetails(params: any) {
         throw new Error("Could not find data script element - page structure may have changed");
       }
       
-      const scriptContent = $(scriptElement).text();
+      scriptContent = $(scriptElement).text();
       if (!scriptContent) {
         throw new Error("Data script element is empty");
       }
       
-      const clientData = JSON.parse(scriptContent).niobeClientData[0][1];
-      const sections = clientData.data.presentation.stayProductDetailPage.sections.sections;
+      const clientData = JSON.parse(scriptContent);
+      const sections = clientData.niobeClientData[0][1].data.presentation.stayProductDetailPage.sections.sections;
       sections.forEach((section: any) => cleanObject(section));
       
       details = sections
@@ -646,8 +667,14 @@ async function handleAirbnbListingDetails(params: any) {
         sectionsFound: Array.isArray(details) ? details.length : 0 
       });
     } catch (parseError) {
+      let parsedRaw: any = null;
+      try { parsedRaw = JSON.parse(scriptContent); } catch (_) {}
+      const detailsPath = ['niobeClientData', '0', '1', 'data', 'presentation', 'stayProductDetailPage', 'sections', 'sections'];
+      const diagnosis = parsedRaw ? diagnoseJsonPath(parsedRaw, detailsPath) : 'Could not parse script content as JSON';
+
       log('error', 'Failed to parse listing details', {
         error: parseError instanceof Error ? parseError.message : String(parseError),
+        diagnosis,
         id,
         url: listingUrl.toString()
       });
@@ -658,6 +685,7 @@ async function handleAirbnbListingDetails(params: any) {
           text: JSON.stringify({
             error: "Failed to parse listing details from Airbnb. The page structure may have changed.",
             details: parseError instanceof Error ? parseError.message : String(parseError),
+            diagnosis,
             listingUrl: listingUrl.toString()
           }, null, 2)
         }],
