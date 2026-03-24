@@ -141,8 +141,68 @@ const AIRBNB_TOOLS = [
 ] as const;
 
 // Utility functions
-const USER_AGENT = "ModelContextProtocol/1.0 (Autonomous; +https://github.com/modelcontextprotocol/servers)";
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const BASE_URL = "https://www.airbnb.com";
+
+// Geocode location using OpenStreetMap Nominatim to get bounding box
+// This bypasses Airbnb's broken server-side geocoding for non-US locations
+async function geocodeLocation(location: string): Promise<{
+  ne_lat: string; ne_lng: string; sw_lat: string; sw_lng: string;
+  displayName: string;
+} | null> {
+  try {
+    log('info', 'Geocoding location via Nominatim', { location });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1&addressdetails=1`;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "MCP-Airbnb-Server/1.0 (geocoding-fix)",
+        "Accept": "application/json",
+      },
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      log('warn', 'Nominatim returned non-OK status', { status: response.status });
+      return null;
+    }
+    
+    const results = await response.json() as any[];
+    if (!results || results.length === 0) {
+      log('warn', 'Nominatim returned no results', { location });
+      return null;
+    }
+    
+    const result = results[0];
+    const boundingbox = result.boundingbox; // [south_lat, north_lat, west_lng, east_lng]
+    
+    if (!boundingbox || boundingbox.length !== 4) {
+      log('warn', 'Nominatim result missing bounding box', { location });
+      return null;
+    }
+    
+    const coords = {
+      sw_lat: boundingbox[0],
+      ne_lat: boundingbox[1],
+      sw_lng: boundingbox[2],
+      ne_lng: boundingbox[3],
+      displayName: result.display_name || location,
+    };
+    
+    log('info', 'Geocoded successfully', { location, coords });
+    return coords;
+  } catch (error) {
+    log('warn', 'Geocoding failed, falling back to location string', {
+      location,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
 
 // Configuration from environment variables (set by DXT host)
 const IGNORE_ROBOTS_TXT = process.env.IGNORE_ROBOTS_TXT === "true" || process.argv.slice(2).includes("--ignore-robots-txt");
@@ -265,6 +325,17 @@ async function handleAirbnbSearch(params: any) {
   
   // Add placeId
   if (placeId) searchUrl.searchParams.append("place_id", placeId);
+  
+  // Geocode and add bounding box to fix broken server-side geocoding
+  if (!placeId) {
+    const coords = await geocodeLocation(location);
+    if (coords) {
+      searchUrl.searchParams.append("ne_lat", coords.ne_lat);
+      searchUrl.searchParams.append("ne_lng", coords.ne_lng);
+      searchUrl.searchParams.append("sw_lat", coords.sw_lat);
+      searchUrl.searchParams.append("sw_lng", coords.sw_lng);
+    }
+  }
   
   // Add query parameters
   if (checkin) searchUrl.searchParams.append("checkin", checkin);
