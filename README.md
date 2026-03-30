@@ -26,6 +26,10 @@ A comprehensive Desktop Extension for searching Airbnb listings with advanced fi
 - **Rate limiting awareness** and respectful API usage
 - **Secure configuration** through DXT user settings
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/openbnb-org-mcp-server-airbnb).
+
 ## Installation
 
 ### For Claude Desktop
