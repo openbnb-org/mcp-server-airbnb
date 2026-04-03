@@ -149,105 +149,139 @@ const AIRBNB_TOOLS = [
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const BASE_URL = "https://www.airbnb.com";
 
-// Geocode location using Photon (photon.komoot.io) to get bounding box.
+// Geocode location using Photon (fast, no rate limits) with Nominatim fallback.
 // This bypasses Airbnb's broken server-side geocoding for non-US locations.
-// Photon uses OpenStreetMap data, is fast, and has no strict rate limits.
+// Photon doesn't rank by importance, so we fetch multiple results and prefer
+// cities/states/countries over hamlets/houses/POIs.
+const PHOTON_TYPE_PRIORITY: Record<string, number> = {
+  country: 1, state: 2, county: 3, city: 4, district: 5,
+  locality: 6, street: 7, house: 8, other: 9,
+};
+
+function pickBestPhotonFeature(features: any[]): any | null {
+  // Pick the feature with the highest-priority type (city > hamlet > house etc).
+  // Don't filter by extent here — the best match (e.g. Stockholm, Sweden) may
+  // lack an extent, and we'll fall back to Nominatim for the bbox.
+  if (!features || features.length === 0) return null;
+
+  return features.reduce((best: any, f: any) => {
+    const bestPri = PHOTON_TYPE_PRIORITY[best.properties?.type] ?? PHOTON_TYPE_PRIORITY.other;
+    const fPri = PHOTON_TYPE_PRIORITY[f.properties?.type] ?? PHOTON_TYPE_PRIORITY.other;
+    return fPri < bestPri ? f : best;
+  });
+}
+
 async function geocodeLocation(location: string): Promise<{
   ne_lat: string; ne_lng: string; sw_lat: string; sw_lng: string;
   displayName: string;
 } | null> {
+  let extent: number[] | null = null;
+  let displayName = location;
+
+  // Try Photon first — fast, no strict rate limits, OSM data.
   try {
     log('info', 'Geocoding location via Photon', { location });
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
-    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(location)}&limit=1`;
-    const response = await fetch(url, {
-      headers: {
-        "Accept": "application/json",
-      },
-      signal: controller.signal,
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(location)}&limit=5`;
+    let response;
+    try {
+      response = await fetch(url, {
+        headers: { "Accept": "application/json" },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (response.ok) {
+      const data = await response.json() as any;
+      const feature = pickBestPhotonFeature(data?.features ?? []);
+      if (feature) {
+        if (feature.properties?.extent?.length === 4) {
+          extent = feature.properties.extent; // [west_lng, north_lat, east_lng, south_lat]
+        }
+        displayName = feature.properties?.name || location;
+        log('info', 'Photon selected feature', {
+          location,
+          type: feature.properties?.type,
+          name: feature.properties?.name,
+          country: feature.properties?.country,
+          hasExtent: !!extent,
+        });
+      }
+    }
+  } catch (error) {
+    log('warn', 'Photon geocoding failed', {
+      location,
+      error: error instanceof Error ? error.message : String(error),
     });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      log('warn', 'Photon returned non-OK status', { status: response.status });
-      return null;
-    }
-    
-    const data = await response.json() as any;
-    const features = data?.features;
-    if (!features || features.length === 0) {
-      log('warn', 'Photon returned no results', { location });
-      return null;
-    }
-    
-    const feature = features[0];
-    let extent = feature.properties?.extent; // [west_lng, north_lat, east_lng, south_lat]
-    
-    // Photon doesn't always return extent (e.g., Copenhagen, Stockholm).
-    // Fall back to Nominatim for the bounding box.
-    if (!extent || extent.length !== 4) {
-      log('info', 'Photon missing extent, falling back to Nominatim', { location });
+  }
+
+  // Fall back to Nominatim if Photon didn't return a bbox.
+  // Nominatim ranks by importance so it handles ambiguous names well.
+  // Nominatim usage policy requires an identifying User-Agent (not a browser UA).
+  // See https://operations.osmfoundation.org/policies/nominatim/
+  if (!extent) {
+    try {
+      log('info', 'Falling back to Nominatim for geocoding', { location });
+      const nomController = new AbortController();
+      const nomTimeout = setTimeout(() => nomController.abort(), 5000);
+      const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1`;
+      let nomResponse;
       try {
-        const nomController = new AbortController();
-        const nomTimeout = setTimeout(() => nomController.abort(), 5000);
-        const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1`;
-        const nomResponse = await fetch(nomUrl, {
+        nomResponse = await fetch(nomUrl, {
           headers: {
             "User-Agent": "MCP-Airbnb-Server/1.0 (geocoding-fallback)",
             "Accept": "application/json",
           },
           signal: nomController.signal,
         });
+      } finally {
         clearTimeout(nomTimeout);
-        if (nomResponse.ok) {
-          const nomResults = await nomResponse.json() as any[];
-          if (nomResults?.[0]?.boundingbox?.length === 4) {
-            const bb = nomResults[0].boundingbox; // [south_lat, north_lat, west_lng, east_lng]
-            extent = [parseFloat(bb[2]), parseFloat(bb[1]), parseFloat(bb[3]), parseFloat(bb[0])]; // convert to Photon format
-            log('info', 'Nominatim fallback succeeded', { location, extent });
-          }
-        }
-      } catch (nomError) {
-        log('warn', 'Nominatim fallback also failed', { location });
       }
+      if (nomResponse.ok) {
+        const nomResults = await nomResponse.json() as any[];
+        if (nomResults?.[0]?.boundingbox?.length === 4) {
+          const bb = nomResults[0].boundingbox; // [south_lat, north_lat, west_lng, east_lng]
+          extent = [parseFloat(bb[2]), parseFloat(bb[1]), parseFloat(bb[3]), parseFloat(bb[0])];
+          displayName = nomResults[0].display_name?.split(",")?.[0] || location;
+          log('info', 'Nominatim fallback succeeded', { location, extent });
+        }
+      }
+    } catch (nomError) {
+      log('warn', 'Nominatim fallback also failed', { location });
     }
+  }
 
-    if (!extent || extent.length !== 4) {
-      log('warn', 'No bounding box from either geocoder', { location });
-      return null;
-    }
-    
-    // Expand bounding box by 25% in each direction (minimum 0.1°, ~11km)
-    // to capture suburbs, beaches, and surrounding areas. OSM returns tight
-    // administrative boundaries (e.g., Paris = just the arrondissements,
-    // Pensacola = city limits without the beach on the barrier island).
-    const swLat = extent[3];
-    const neLat = extent[1];
-    const swLng = extent[0];
-    const neLng = extent[2];
-    const latPadding = Math.max((neLat - swLat) * 0.25, 0.1);
-    const lngPadding = Math.max((neLng - swLng) * 0.25, 0.1);
-
-    const coords = {
-      sw_lat: (swLat - latPadding).toFixed(7),
-      ne_lat: (neLat + latPadding).toFixed(7),
-      sw_lng: (swLng - lngPadding).toFixed(7),
-      ne_lng: (neLng + lngPadding).toFixed(7),
-      displayName: feature.properties?.name || location,
-    };
-    
-    log('info', 'Geocoded successfully (with 25% padding)', { location, coords });
-    return coords;
-  } catch (error) {
-    log('warn', 'Geocoding failed, falling back to location string', {
-      location,
-      error: error instanceof Error ? error.message : String(error),
-    });
+  if (!extent || extent.length !== 4) {
+    log('warn', 'No bounding box from either geocoder', { location });
     return null;
   }
+
+  // Expand bounding box by 25% in each direction (minimum 0.1°, ~11km)
+  // to capture suburbs, beaches, and surrounding areas. OSM returns tight
+  // administrative boundaries (e.g., Paris = just the arrondissements,
+  // Pensacola = city limits without the beach on the barrier island).
+  const swLat = extent[3];
+  const neLat = extent[1];
+  const swLng = extent[0];
+  const neLng = extent[2];
+  const latPadding = Math.max((neLat - swLat) * 0.25, 0.1);
+  const lngPadding = Math.max((neLng - swLng) * 0.25, 0.1);
+
+  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+  const coords = {
+    sw_lat: clamp(swLat - latPadding, -90, 90).toFixed(7),
+    ne_lat: clamp(neLat + latPadding, -90, 90).toFixed(7),
+    sw_lng: clamp(swLng - lngPadding, -180, 180).toFixed(7),
+    ne_lng: clamp(neLng + lngPadding, -180, 180).toFixed(7),
+    displayName,
+  };
+
+  log('info', 'Geocoded successfully (with 25% padding)', { location, coords });
+  return coords;
 }
 
 const PROPERTY_TYPE_IDS: Record<string, string> = {
@@ -410,8 +444,8 @@ async function handleAirbnbSearch(params: any) {
   }
   
   // Add price range
-  if (minPrice) searchUrl.searchParams.append("price_min", minPrice.toString());
-  if (maxPrice) searchUrl.searchParams.append("price_max", maxPrice.toString());
+  if (minPrice != null) searchUrl.searchParams.append("price_min", minPrice.toString());
+  if (maxPrice != null) searchUrl.searchParams.append("price_max", maxPrice.toString());
   
   // Add property type filter
   if (propertyType && PROPERTY_TYPE_IDS[propertyType]) {
