@@ -187,7 +187,10 @@ async function geocodeLocation(location: string): Promise<{
     let response;
     try {
       response = await fetch(url, {
-        headers: { "Accept": "application/json" },
+        headers: {
+          "User-Agent": `mcp-server-airbnb/${VERSION} (+https://github.com/openbnb-org/mcp-server-airbnb)`,
+          "Accept": "application/json",
+        },
         signal: controller.signal,
       });
     } finally {
@@ -232,7 +235,7 @@ async function geocodeLocation(location: string): Promise<{
       try {
         nomResponse = await fetch(nomUrl, {
           headers: {
-            "User-Agent": "MCP-Airbnb-Server/1.0 (geocoding-fallback)",
+            "User-Agent": `mcp-server-airbnb/${VERSION} (+https://github.com/openbnb-org/mcp-server-airbnb)`,
             "Accept": "application/json",
           },
           signal: nomController.signal,
@@ -293,6 +296,11 @@ const PROPERTY_TYPE_IDS: Record<string, string> = {
 
 // Configuration from environment variables (set by DXT host)
 const IGNORE_ROBOTS_TXT = process.env.IGNORE_ROBOTS_TXT === "true" || process.argv.slice(2).includes("--ignore-robots-txt");
+// When true, skip the Photon/Nominatim geocoding step and let Airbnb's own
+// server-side geocoder handle the location string. Defaults to false so the
+// fix for non-US locations stays on by default; users who want zero third-party
+// outbound calls can opt out by setting DISABLE_GEOCODING=true.
+const DISABLE_GEOCODING = process.env.DISABLE_GEOCODING === "true";
 
 const robotsErrorMessage = "This path is disallowed by Airbnb's robots.txt to this User-agent. You may or may not want to run the server with '--ignore-robots-txt' args"
 let robotsTxtContent = "";
@@ -414,8 +422,10 @@ async function handleAirbnbSearch(params: any) {
   // Add placeId
   if (placeId) searchUrl.searchParams.append("place_id", placeId);
   
-  // Geocode and add bounding box to fix broken server-side geocoding
-  if (!placeId) {
+  // Geocode and add bounding box to fix broken server-side geocoding.
+  // Skipped when placeId is supplied (Airbnb's place lookup is reliable for those)
+  // or when DISABLE_GEOCODING=true (user opt-out from third-party calls).
+  if (!placeId && !DISABLE_GEOCODING) {
     const coords = await geocodeLocation(location);
     if (coords) {
       searchUrl.searchParams.append("ne_lat", coords.ne_lat);
@@ -827,6 +837,7 @@ function log(level: 'info' | 'warn' | 'error', message: string, data?: any) {
 log('info', 'Airbnb MCP Server starting', {
   version: VERSION,
   ignoreRobotsTxt: IGNORE_ROBOTS_TXT,
+  disableGeocoding: DISABLE_GEOCODING,
   nodeVersion: process.version,
   platform: process.platform
 });

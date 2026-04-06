@@ -203,7 +203,7 @@ class MCPTester {
     if (this.server && !this.server.killed) {
       console.log('\n🛑 Stopping server...');
       this.server.kill('SIGTERM');
-      
+
       // Wait for graceful shutdown
       await new Promise(resolve => {
         this.server.on('exit', resolve);
@@ -214,22 +214,85 @@ class MCPTester {
           resolve();
         }, 5000);
       });
-      
+
       console.log('✅ Server stopped');
     }
   }
 
+  // Helper: extract the searchUrl the server echoes back in its response body.
+  _extractSearchUrl(response) {
+    const text = response?.result?.content?.[0]?.text;
+    if (!text) return '';
+    try {
+      return JSON.parse(text).searchUrl || '';
+    } catch {
+      return '';
+    }
+  }
+
+  // Assert client-side geocoding actually populates ne_lat/ne_lng/sw_lat/sw_lng
+  // *and* that the bbox is centered on the correct city. Without client-side
+  // geocoding, "Paris, France" lands in Vendée (~46.4, -1.1) and "Copenhagen"
+  // lands in Wisconsin (~43.0, -88.0) — so checking the bbox center falls inside
+  // the expected lat/lng window is the meaningful assertion.
+  async testGeocoding() {
+    console.log('\n🌍 Testing geocoding...');
+    const cases = [
+      { location: 'Paris, France',            lat: [48.5, 49.1], lng: [2.0, 2.7],   label: 'Paris (Photon path)' },
+      { location: 'Copenhagen, Denmark',      lat: [55.4, 55.9], lng: [12.3, 12.8], label: 'Copenhagen (Nominatim fallback)' },
+      { location: 'Munich, Bavaria, Germany', lat: [48.0, 48.4], lng: [11.2, 11.9], label: 'Munich (regression check)' },
+    ];
+
+    const parseBbox = (url) => {
+      const params = new URLSearchParams(url.split('?')[1] || '');
+      const ne_lat = parseFloat(params.get('ne_lat'));
+      const ne_lng = parseFloat(params.get('ne_lng'));
+      const sw_lat = parseFloat(params.get('sw_lat'));
+      const sw_lng = parseFloat(params.get('sw_lng'));
+      if ([ne_lat, ne_lng, sw_lat, sw_lng].some(Number.isNaN)) return null;
+      return { centerLat: (ne_lat + sw_lat) / 2, centerLng: (ne_lng + sw_lng) / 2, ne_lat, ne_lng, sw_lat, sw_lng };
+    };
+
+    let allOk = true;
+    for (const c of cases) {
+      try {
+        const response = await this.sendRequest('tools/call', {
+          name: 'airbnb_search',
+          arguments: { location: c.location, ignoreRobotsText: true },
+        });
+        const url = this._extractSearchUrl(response);
+        const bbox = parseBbox(url);
+        if (!bbox) {
+          console.log(`   ❌ ${c.label}: no bbox in URL — geocoding silently failed`);
+          allOk = false;
+          continue;
+        }
+        const latOk = bbox.centerLat >= c.lat[0] && bbox.centerLat <= c.lat[1];
+        const lngOk = bbox.centerLng >= c.lng[0] && bbox.centerLng <= c.lng[1];
+        const ok = latOk && lngOk;
+        const center = `(${bbox.centerLat.toFixed(3)}, ${bbox.centerLng.toFixed(3)})`;
+        console.log(`   ${ok ? '✅' : '❌'} ${c.label}: center=${center}  bbox=[${bbox.sw_lat.toFixed(2)},${bbox.sw_lng.toFixed(2)} → ${bbox.ne_lat.toFixed(2)},${bbox.ne_lng.toFixed(2)}]`);
+        if (!ok) allOk = false;
+      } catch (error) {
+        console.error(`   ❌ ${c.label}: ${error.message}`);
+        allOk = false;
+      }
+    }
+    return allOk;
+  }
+
   async runTests() {
     let allPassed = true;
-    
+
     try {
       await this.startServer();
-      
+
       // Run all tests
       const tests = [
         () => this.testListTools(),
         () => this.testSearchTool(),
-        () => this.testListingDetailsTool()
+        () => this.testListingDetailsTool(),
+        () => this.testGeocoding(),
       ];
       
       for (const test of tests) {
