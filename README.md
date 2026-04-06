@@ -6,7 +6,9 @@ A comprehensive Desktop Extension for searching Airbnb listings with advanced fi
 
 ### 🔍 Advanced Search Capabilities
 - **Location-based search** with support for cities, states, and regions
+- **International location support** via client-side geocoding, so non-US queries (e.g. "Paris, France", "Copenhagen, Denmark") return results in the right city
 - **Google Maps Place ID** integration for precise location targeting
+- **Property type filtering** for entire homes, private rooms, shared rooms, or hotel rooms
 - **Date filtering** with check-in and check-out date support
 - **Guest configuration** including adults, children, infants, and pets
 - **Price range filtering** with minimum and maximum price constraints
@@ -85,6 +87,13 @@ The extension provides the following user-configurable options:
 - **Description**: Bypass robots.txt restrictions when making requests to Airbnb
 - **Recommendation**: Keep disabled unless needed for testing purposes
 
+### Disable third-party geocoding
+- **Type**: Boolean (checkbox)
+- **Environment variable**: `DISABLE_GEOCODING`
+- **Default**: `false`
+- **Description**: Skip the Photon/Nominatim geocoding step and let Airbnb resolve the location string on its own. Enabling this restores the pre-PR behavior — every search goes only to `airbnb.com`, no third-party calls.
+- **Recommendation**: Keep disabled unless you specifically need zero third-party outbound traffic. With it enabled, non-US searches could return incorrect results. See [External Services](#external-services).
+
 ## Tools
 
 ### `airbnb_search`
@@ -92,8 +101,8 @@ The extension provides the following user-configurable options:
 Search for Airbnb listings with comprehensive filtering options.
 
 **Parameters:**
-- `location` (required): Location to search (e.g., "San Francisco, CA")
-- `placeId` (optional): Google Maps Place ID (overrides location)
+- `location` (required): Location to search (e.g., "San Francisco, CA"). When supplied without `placeId`, the server geocodes this string client-side via Photon/Nominatim — see [External Services](#external-services).
+- `placeId` (optional): Google Maps Place ID. Overrides `location` and skips client-side geocoding entirely (no third-party calls).
 - `checkin` (optional): Check-in date in YYYY-MM-DD format
 - `checkout` (optional): Check-out date in YYYY-MM-DD format
 - `adults` (optional): Number of adults (default: 1)
@@ -140,6 +149,24 @@ Get detailed information about a specific Airbnb listing.
 - **Protocol**: Model Context Protocol (MCP) via stdio transport
 - **Format**: Desktop Extension (DXT) v0.1
 - **Dependencies**: Minimal external dependencies for security and reliability
+
+### External Services
+
+In addition to `airbnb.com`, the server makes geocoding requests to two third-party services to translate location queries into accurate map bounding boxes. This bypasses Airbnb's own server-side geocoder, which produces incorrect results for many non-US queries (e.g. "Paris, France" lands in Vendée; "Copenhagen, Denmark" lands in Wisconsin).
+
+| Service | Endpoint | Used for | Notes |
+| --- | --- | --- | --- |
+| [Photon](https://photon.komoot.io/) | `photon.komoot.io` | Primary geocoder, called on every search without `placeId` | Free OSM-based service hosted by Komoot. One request per search. |
+| [Nominatim](https://nominatim.openstreetmap.org/) | `nominatim.openstreetmap.org` | Fallback geocoder, called only when Photon does not return a bounding box | Subject to the [OSMF usage policy](https://operations.osmfoundation.org/policies/nominatim/) (max ~1 req/sec). |
+
+Each search sends only the `location` string from the request to the geocoder — no other request fields, no IP geolocation, no tracking identifiers. The location string itself is, of course, the same string the user typed.
+
+**Opting out:** there are two ways to skip the geocoders:
+
+- **Per-request:** supply an explicit `placeId`. When `placeId` is present, the server uses Airbnb's own place lookup directly with no third-party calls.
+- **Globally:** set the environment variable `DISABLE_GEOCODING=true`. The server will skip Photon/Nominatim entirely and pass the raw location string to Airbnb. This restores the pre-PR behavior for every search and guarantees zero third-party outbound traffic — at the cost of broken results for non-US locations that Airbnb's own geocoder mishandles. Defaults to `false`.
+
+If a geocoder is unreachable or returns no result, the server falls back to sending the location string to Airbnb directly, exactly as it did before — so the worst case for an outage is that international searches degrade to the previous (broken) behavior, not that the search fails entirely.
 
 ### Error Handling
 - Comprehensive error logging with timestamps
