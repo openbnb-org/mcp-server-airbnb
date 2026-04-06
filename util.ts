@@ -1,11 +1,26 @@
 export function cleanObject(obj: any) {
   Object.keys(obj).forEach(key => {
-    if (!obj[key] || key === "__typename") {
+    if (obj[key] == null || key === "__typename") {
       delete obj[key];
     } else if (typeof obj[key] === "object") {
       cleanObject(obj[key]);
     }
   });
+}
+
+export function diagnoseJsonPath(data: any, path: string[]): string {
+  let current = data;
+  for (const key of path) {
+    if (current == null || typeof current !== 'object') {
+      return `Path broken at '${key}': parent is ${current === null ? 'null' : typeof current}`;
+    }
+    if (!(key in current)) {
+      const available = Object.keys(current).slice(0, 10).join(', ');
+      return `Key '${key}' not found. Available keys: [${available}]`;
+    }
+    current = current[key];
+  }
+  return 'Path valid';
 }
 
 export function pickBySchema(obj: any, schema: any): any {

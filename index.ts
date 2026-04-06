@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema } from "./util.js";
+import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath } from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -83,6 +83,11 @@ const AIRBNB_SEARCH_TOOL: Tool = {
         type: "string",
         description: "Base64-encoded string used for Pagination"
       },
+      propertyType: {
+        type: "string",
+        enum: ["entire_home", "private_room", "shared_room", "hotel_room"],
+        description: "Filter by property type: 'entire_home' (entire homes/apartments), 'private_room' (private rooms in shared homes), 'shared_room' (shared/dorm-style rooms), 'hotel_room' (hotel rooms)"
+      },
       ignoreRobotsText: {
         type: "boolean",
         description: "Ignore robots.txt rules for this request"
@@ -141,8 +146,150 @@ const AIRBNB_TOOLS = [
 ] as const;
 
 // Utility functions
-const USER_AGENT = "ModelContextProtocol/1.0 (Autonomous; +https://github.com/modelcontextprotocol/servers)";
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const BASE_URL = "https://www.airbnb.com";
+
+// Geocode location using Photon (fast, no rate limits) with Nominatim fallback.
+// This bypasses Airbnb's broken server-side geocoding for non-US locations.
+// Photon doesn't rank by importance, so we fetch multiple results and prefer
+// cities/states/countries over hamlets/houses/POIs.
+const PHOTON_TYPE_PRIORITY: Record<string, number> = {
+  country: 1, state: 2, county: 3, city: 4, district: 5,
+  locality: 6, street: 7, house: 8, other: 9,
+};
+
+function pickBestPhotonFeature(features: any[]): any | null {
+  // Pick the feature with the highest-priority type (city > hamlet > house etc).
+  // Don't filter by extent here — the best match (e.g. Stockholm, Sweden) may
+  // lack an extent, and we'll fall back to Nominatim for the bbox.
+  if (!features || features.length === 0) return null;
+
+  return features.reduce((best: any, f: any) => {
+    const bestPri = PHOTON_TYPE_PRIORITY[best.properties?.type] ?? PHOTON_TYPE_PRIORITY.other;
+    const fPri = PHOTON_TYPE_PRIORITY[f.properties?.type] ?? PHOTON_TYPE_PRIORITY.other;
+    return fPri < bestPri ? f : best;
+  });
+}
+
+async function geocodeLocation(location: string): Promise<{
+  ne_lat: string; ne_lng: string; sw_lat: string; sw_lng: string;
+  displayName: string;
+} | null> {
+  let extent: number[] | null = null;
+  let displayName = location;
+
+  // Try Photon first — fast, no strict rate limits, OSM data.
+  try {
+    log('info', 'Geocoding location via Photon', { location });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(location)}&limit=5`;
+    let response;
+    try {
+      response = await fetch(url, {
+        headers: { "Accept": "application/json" },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (response.ok) {
+      const data = await response.json() as any;
+      const feature = pickBestPhotonFeature(data?.features ?? []);
+      if (feature) {
+        if (feature.properties?.extent?.length === 4) {
+          extent = feature.properties.extent; // [west_lng, north_lat, east_lng, south_lat]
+        }
+        displayName = feature.properties?.name || location;
+        log('info', 'Photon selected feature', {
+          location,
+          type: feature.properties?.type,
+          name: feature.properties?.name,
+          country: feature.properties?.country,
+          hasExtent: !!extent,
+        });
+      }
+    }
+  } catch (error) {
+    log('warn', 'Photon geocoding failed', {
+      location,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  // Fall back to Nominatim if Photon didn't return a bbox.
+  // Nominatim ranks by importance so it handles ambiguous names well.
+  // Nominatim usage policy requires an identifying User-Agent (not a browser UA).
+  // See https://operations.osmfoundation.org/policies/nominatim/
+  if (!extent) {
+    try {
+      log('info', 'Falling back to Nominatim for geocoding', { location });
+      const nomController = new AbortController();
+      const nomTimeout = setTimeout(() => nomController.abort(), 5000);
+      const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1`;
+      let nomResponse;
+      try {
+        nomResponse = await fetch(nomUrl, {
+          headers: {
+            "User-Agent": "MCP-Airbnb-Server/1.0 (geocoding-fallback)",
+            "Accept": "application/json",
+          },
+          signal: nomController.signal,
+        });
+      } finally {
+        clearTimeout(nomTimeout);
+      }
+      if (nomResponse.ok) {
+        const nomResults = await nomResponse.json() as any[];
+        if (nomResults?.[0]?.boundingbox?.length === 4) {
+          const bb = nomResults[0].boundingbox; // [south_lat, north_lat, west_lng, east_lng]
+          extent = [parseFloat(bb[2]), parseFloat(bb[1]), parseFloat(bb[3]), parseFloat(bb[0])];
+          displayName = nomResults[0].display_name?.split(",")?.[0] || location;
+          log('info', 'Nominatim fallback succeeded', { location, extent });
+        }
+      }
+    } catch (nomError) {
+      log('warn', 'Nominatim fallback also failed', { location });
+    }
+  }
+
+  if (!extent || extent.length !== 4) {
+    log('warn', 'No bounding box from either geocoder', { location });
+    return null;
+  }
+
+  // Expand bounding box by 25% in each direction (minimum 0.1°, ~11km)
+  // to capture suburbs, beaches, and surrounding areas. OSM returns tight
+  // administrative boundaries (e.g., Paris = just the arrondissements,
+  // Pensacola = city limits without the beach on the barrier island).
+  const swLat = extent[3];
+  const neLat = extent[1];
+  const swLng = extent[0];
+  const neLng = extent[2];
+  const latPadding = Math.max((neLat - swLat) * 0.25, 0.1);
+  const lngPadding = Math.max((neLng - swLng) * 0.25, 0.1);
+
+  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+  const coords = {
+    sw_lat: clamp(swLat - latPadding, -90, 90).toFixed(7),
+    ne_lat: clamp(neLat + latPadding, -90, 90).toFixed(7),
+    sw_lng: clamp(swLng - lngPadding, -180, 180).toFixed(7),
+    ne_lng: clamp(neLng + lngPadding, -180, 180).toFixed(7),
+    displayName,
+  };
+
+  log('info', 'Geocoded successfully (with 25% padding)', { location, coords });
+  return coords;
+}
+
+const PROPERTY_TYPE_IDS: Record<string, string> = {
+  entire_home:  "1",
+  private_room: "2",
+  shared_room:  "3",
+  hotel_room:   "4",
+};
 
 // Configuration from environment variables (set by DXT host)
 const IGNORE_ROBOTS_TXT = process.env.IGNORE_ROBOTS_TXT === "true" || process.argv.slice(2).includes("--ignore-robots-txt");
@@ -257,6 +404,7 @@ async function handleAirbnbSearch(params: any) {
     minPrice,
     maxPrice,
     cursor,
+    propertyType,
     ignoreRobotsText = false,
   } = params;
 
@@ -265,6 +413,17 @@ async function handleAirbnbSearch(params: any) {
   
   // Add placeId
   if (placeId) searchUrl.searchParams.append("place_id", placeId);
+  
+  // Geocode and add bounding box to fix broken server-side geocoding
+  if (!placeId) {
+    const coords = await geocodeLocation(location);
+    if (coords) {
+      searchUrl.searchParams.append("ne_lat", coords.ne_lat);
+      searchUrl.searchParams.append("ne_lng", coords.ne_lng);
+      searchUrl.searchParams.append("sw_lat", coords.sw_lat);
+      searchUrl.searchParams.append("sw_lng", coords.sw_lng);
+    }
+  }
   
   // Add query parameters
   if (checkin) searchUrl.searchParams.append("checkin", checkin);
@@ -285,14 +444,13 @@ async function handleAirbnbSearch(params: any) {
   }
   
   // Add price range
-  if (minPrice) searchUrl.searchParams.append("price_min", minPrice.toString());
-  if (maxPrice) searchUrl.searchParams.append("price_max", maxPrice.toString());
+  if (minPrice != null) searchUrl.searchParams.append("price_min", minPrice.toString());
+  if (maxPrice != null) searchUrl.searchParams.append("price_max", maxPrice.toString());
   
-  // Add room type
-  // if (roomType) {
-  //   const roomTypeParam = roomType.toLowerCase().replace(/\s+/g, '_');
-  //   searchUrl.searchParams.append("room_types[]", roomTypeParam);
-  // }
+  // Add property type filter
+  if (propertyType && PROPERTY_TYPE_IDS[propertyType]) {
+    searchUrl.searchParams.append("l2_property_type_ids[]", PROPERTY_TYPE_IDS[propertyType]);
+  }
 
   // Add cursor for pagination
   if (cursor) {
@@ -371,6 +529,7 @@ async function handleAirbnbSearch(params: any) {
     const $ = cheerio.load(html);
     
     let staysSearchResults: any = {};
+    let scriptContent = '';
     
     try {
       const scriptElement = $("#data-deferred-state-0").first();
@@ -378,13 +537,13 @@ async function handleAirbnbSearch(params: any) {
         throw new Error("Could not find data script element - page structure may have changed");
       }
       
-      const scriptContent = $(scriptElement).text();
+      scriptContent = $(scriptElement).text();
       if (!scriptContent) {
         throw new Error("Data script element is empty");
       }
       
-      const clientData = JSON.parse(scriptContent).niobeClientData[0][1];
-      const results = clientData.data.presentation.staysSearch.results;
+      const clientData = JSON.parse(scriptContent);
+      const results = clientData.niobeClientData[0][1].data.presentation.staysSearch.results;
       cleanObject(results);
       
       staysSearchResults = {
@@ -401,8 +560,14 @@ async function handleAirbnbSearch(params: any) {
         resultCount: staysSearchResults.searchResults?.length || 0 
       });
     } catch (parseError) {
+      let parsedRaw: any = null;
+      try { parsedRaw = JSON.parse(scriptContent); } catch (_) {}
+      const searchPath = ['niobeClientData', '0', '1', 'data', 'presentation', 'staysSearch', 'results'];
+      const diagnosis = parsedRaw ? diagnoseJsonPath(parsedRaw, searchPath) : 'Could not parse script content as JSON';
+
       log('error', 'Failed to parse search results', {
         error: parseError instanceof Error ? parseError.message : String(parseError),
+        diagnosis,
         url: searchUrl.toString()
       });
       
@@ -412,6 +577,7 @@ async function handleAirbnbSearch(params: any) {
           text: JSON.stringify({
             error: "Failed to parse search results from Airbnb. The page structure may have changed.",
             details: parseError instanceof Error ? parseError.message : String(parseError),
+            diagnosis,
             searchUrl: searchUrl.toString()
           }, null, 2)
         }],
@@ -545,6 +711,7 @@ async function handleAirbnbListingDetails(params: any) {
     const $ = cheerio.load(html);
     
     let details = {};
+    let scriptContent = '';
     
     try {
       const scriptElement = $("#data-deferred-state-0").first();
@@ -552,13 +719,13 @@ async function handleAirbnbListingDetails(params: any) {
         throw new Error("Could not find data script element - page structure may have changed");
       }
       
-      const scriptContent = $(scriptElement).text();
+      scriptContent = $(scriptElement).text();
       if (!scriptContent) {
         throw new Error("Data script element is empty");
       }
       
-      const clientData = JSON.parse(scriptContent).niobeClientData[0][1];
-      const sections = clientData.data.presentation.stayProductDetailPage.sections.sections;
+      const clientData = JSON.parse(scriptContent);
+      const sections = clientData.niobeClientData[0][1].data.presentation.stayProductDetailPage.sections.sections;
       sections.forEach((section: any) => cleanObject(section));
       
       details = sections
@@ -575,8 +742,14 @@ async function handleAirbnbListingDetails(params: any) {
         sectionsFound: Array.isArray(details) ? details.length : 0 
       });
     } catch (parseError) {
+      let parsedRaw: any = null;
+      try { parsedRaw = JSON.parse(scriptContent); } catch (_) {}
+      const detailsPath = ['niobeClientData', '0', '1', 'data', 'presentation', 'stayProductDetailPage', 'sections', 'sections'];
+      const diagnosis = parsedRaw ? diagnoseJsonPath(parsedRaw, detailsPath) : 'Could not parse script content as JSON';
+
       log('error', 'Failed to parse listing details', {
         error: parseError instanceof Error ? parseError.message : String(parseError),
+        diagnosis,
         id,
         url: listingUrl.toString()
       });
@@ -587,6 +760,7 @@ async function handleAirbnbListingDetails(params: any) {
           text: JSON.stringify({
             error: "Failed to parse listing details from Airbnb. The page structure may have changed.",
             details: parseError instanceof Error ? parseError.message : String(parseError),
+            diagnosis,
             listingUrl: listingUrl.toString()
           }, null, 2)
         }],
