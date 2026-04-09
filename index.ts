@@ -417,7 +417,13 @@ async function handleAirbnbSearch(params: any) {
   } = params;
 
   // Build search URL
-  const searchUrl = new URL(`${BASE_URL}/s/${encodeURIComponent(location)}/homes`);
+  // Airbnb path segments use "--" as the separator (e.g. "Paris--France"),
+  // not URL-encoded punctuation.  encodeURIComponent turns commas into %2C
+  // which confuses Airbnb's geocoder (e.g. Paris → Barneville-Carteret).
+  const slug = location
+    .replace(/,\s*/g, "--")   // "Paris, France" → "Paris--France"
+    .replace(/\s+/g, "-");    // remaining spaces → single dash
+  const searchUrl = new URL(`${BASE_URL}/s/${encodeURIComponent(slug)}/homes`);
   
   // Add placeId
   if (placeId) searchUrl.searchParams.append("place_id", placeId);
