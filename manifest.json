@@ -1,10 +1,11 @@
 {
-  "dxt_version": "0.1",
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/refs/heads/main/schemas/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
   "name": "airbnb-search",
   "display_name": "Airbnb Search & Listings",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Search Airbnb listings with advanced filtering and get detailed property information",
-  "long_description": "A comprehensive Desktop Extension for searching Airbnb listings with various filters including location, dates, guest count, price range, and more. Get detailed information about specific properties including amenities, policies, location details, and highlights. Respects robots.txt by default with option to override for testing purposes.",
+  "long_description": "A comprehensive MCP Bundle for searching Airbnb listings with various filters including location, dates, guest count, price range, and more. Get detailed information about specific properties including amenities, policies, location details, and highlights. Respects robots.txt by default with option to override for testing purposes.",
   "author": {
     "name": "OpenBnB",
     "email": "aniket@openbnb.org",

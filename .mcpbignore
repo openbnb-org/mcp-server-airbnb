@@ -1,0 +1,14 @@
+# Source files
+*.ts
+
+# Test files
+test-extension.js
+
+# Docker
+Dockerfile
+
+# Config
+.claude/
+smithery.yaml
+tsconfig.json
+excalidraw.log

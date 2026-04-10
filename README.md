@@ -1,6 +1,8 @@
-# Airbnb Search & Listings - Desktop Extension (DXT)
+[![downloads](https://img.shields.io/npm/dm/@openbnb/mcp-server-airbnb)](https://www.npmjs.com/package/@openbnb/mcp-server-airbnb)
 
-A comprehensive Desktop Extension for searching Airbnb listings with advanced filtering capabilities and detailed property information retrieval. Built as a Model Context Protocol (MCP) server packaged in the Desktop Extension (DXT) format for easy installation and use with compatible AI applications.
+# Airbnb Search & Listings - MCP Bundle (MCPB)
+
+A comprehensive MCP Bundle for searching Airbnb listings with advanced filtering capabilities and detailed property information retrieval. Built as a Model Context Protocol (MCP) server packaged in the MCP Bundle (MCPB) format for easy installation and use with compatible AI applications.
 
 ## Features
 
@@ -26,17 +28,16 @@ A comprehensive Desktop Extension for searching Airbnb listings with advanced fi
 - **Request timeout management** to prevent hanging requests
 - **Enhanced error handling** with detailed logging
 - **Rate limiting awareness** and respectful API usage
-- **Secure configuration** through DXT user settings
+- **Secure configuration** through MCPB user settings
 
 ## Installation
 
 ### For Claude Desktop
-This extension is packaged as a Desktop Extension (DXT) file. To install:
+This extension is packaged as an MCP Bundle (`.mcpb`) file. To install:
 
-1. Download the `.dxt` file from the releases page
-2. Open your compatible AI application (e.g., Claude Desktop)
-3. Install the extension through the application's extension manager
-4. Configure the extension settings as needed
+1. Download the `.mcpb` file from the [latest release](https://github.com/openbnb-org/mcp-server-airbnb/releases/latest)
+2. Open the file — Claude Desktop will show an installation dialog
+3. Configure the extension settings as needed
 
 ### For Cursor, etc.
 
@@ -147,7 +148,7 @@ Get detailed information about a specific Airbnb listing.
 ### Architecture
 - **Runtime**: Node.js 18+
 - **Protocol**: Model Context Protocol (MCP) via stdio transport
-- **Format**: Desktop Extension (DXT) v0.1
+- **Format**: MCP Bundle (MCPB) v0.3
 - **Dependencies**: Minimal external dependencies for security and reliability
 
 ### External Services
@@ -232,7 +233,7 @@ node dist/index.js --ignore-robots-txt
 
 - **Issues**: Report bugs and feature requests on [GitHub Issues](https://github.com/openbnb-org/mcp-server-airbnb/issues)
 - **Documentation**: Additional documentation available in the repository
-- **Community**: Join discussions about MCP and DXT development
+- **Community**: Join discussions about MCP and MCPB development
 
 ## License
 
