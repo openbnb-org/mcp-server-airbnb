@@ -39,6 +39,8 @@ This extension is packaged as an MCP Bundle (`.mcpb`) file. To install:
 2. Open the file — Claude Desktop will show an installation dialog
 3. Configure the extension settings as needed
 
+To ignore robots.txt, open Claude Desktop settings, navigate to the extension, and enable the **Ignore robots.txt** toggle.
+
 ### For Cursor, etc.
 
 Before starting make sure [Node.js](https://nodejs.org/) is installed on your desktop for `npx` to work.
