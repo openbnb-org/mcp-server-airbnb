@@ -4,6 +4,25 @@
 
 A comprehensive MCP Bundle for searching Airbnb listings with advanced filtering capabilities and detailed property information retrieval. Built as a Model Context Protocol (MCP) server packaged in the MCP Bundle (MCPB) format for easy installation and use with compatible AI applications.
 
+---
+
+## 🚀 Prefer not to run a local server? Try [openbnb.ai](https://openbnb.ai/)
+
+> **👉 [openbnb.ai](https://openbnb.ai/) is a hosted MCP server that solves the same problem — searching Airbnb listings — without any local setup.**
+
+If you don't want to deal with installing and running this server yourself, **[openbnb.ai](https://openbnb.ai/)** is a separate, fully-hosted alternative you can connect to directly from your MCP client. It goes beyond what this open-source server offers:
+
+- ✅ **Zero setup** — no Node, no `npx`, no config files, no updates to manage
+- ✅ **Advanced filters** — richer search controls beyond the base tools here
+- ✅ **MCP UI** — interactive UI components for browsing results, not just plain text
+- ✅ **Managed & maintained** — kept running for you
+
+Head to **[openbnb.ai](https://openbnb.ai/)** for setup instructions and the connection details for your MCP client.
+
+If you'd rather self-host the open-source server, read on.
+
+---
+
 ## Features
 
 ### 🔍 Advanced Search Capabilities
