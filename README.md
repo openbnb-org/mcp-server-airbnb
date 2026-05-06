@@ -1,5 +1,7 @@
 # Airbnb Search & Listings - Desktop Extension (DXT)
 
+[![smithery badge](https://smithery.ai/badge/iclickfreedownloads/mcp-server-airbnb)](https://smithery.ai/servers/iclickfreedownloads/mcp-server-airbnb)
+
 A comprehensive Desktop Extension for searching Airbnb listings with advanced filtering capabilities and detailed property information retrieval. Built as a Model Context Protocol (MCP) server packaged in the Desktop Extension (DXT) format for easy installation and use with compatible AI applications.
 
 ## Features
