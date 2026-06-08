@@ -2,6 +2,14 @@
   "name": "@openbnb/mcp-server-airbnb",
   "version": "0.2.0",
   "description": "MCP server for Airbnb search and listing details",
+  "homepage": "https://github.com/openbnb-org/mcp-server-airbnb#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openbnb-org/mcp-server-airbnb.git"
+  },
+  "bugs": {
+    "url": "https://github.com/openbnb-org/mcp-server-airbnb/issues"
+  },
   "license": "MIT",
   "type": "module",
   "author": "OpenBnB (https://openbnb.org)",
