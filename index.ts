@@ -79,6 +79,45 @@ const AIRBNB_SEARCH_TOOL: Tool = {
         type: "number",
         description: "Maximum price for the stay"
       },
+      amenities: {
+        type: "array",
+        items: { type: "number" },
+        description: "List of required amenity IDs. Common IDs: wifi=4, air_conditioning=5, kitchen=8, free_parking=9, washer=33, dryer=34, pool=7, hot_tub=25, ev_charger=97, tv=58, heating=30, dedicated_workspace=47, hair_dryer=45, iron=46, crib=286, king_bed=1000, gym=15, bbq_grill=99, breakfast=16, indoor_fireplace=27, smoking_allowed=11, self_checkin=51, smoke_alarm=35, co_alarm=36"
+      },
+      roomType: {
+        type: "string",
+        enum: ["entire_home", "private_room", "hotel_room"],
+        description: "Type of place: 'entire_home' (whole home/apt), 'private_room', or 'hotel_room'"
+      },
+      propertyTypes: {
+        type: "array",
+        items: { type: "string", enum: ["house", "apartment", "guesthouse", "hotel"] },
+        description: "Filter by property type(s): 'house', 'apartment', 'guesthouse', 'hotel'"
+      },
+      minBedrooms: {
+        type: "number",
+        description: "Minimum number of bedrooms"
+      },
+      minBeds: {
+        type: "number",
+        description: "Minimum number of beds"
+      },
+      minBathrooms: {
+        type: "number",
+        description: "Minimum number of bathrooms"
+      },
+      instantBook: {
+        type: "boolean",
+        description: "Only show listings with Instant Book enabled"
+      },
+      selfCheckIn: {
+        type: "boolean",
+        description: "Only show listings with self check-in"
+      },
+      freeCancellation: {
+        type: "boolean",
+        description: "Only show listings with free cancellation"
+      },
       cursor: {
         type: "string",
         description: "Base64-encoded string used for Pagination"
@@ -139,6 +178,49 @@ const AIRBNB_TOOLS = [
   AIRBNB_SEARCH_TOOL,
   AIRBNB_LISTING_DETAILS_TOOL,
 ] as const;
+
+// Amenity name → numeric ID mapping (sourced from Airbnb filter UI)
+const AMENITY_IDS: Record<string, number> = {
+  'wifi': 4,
+  'air conditioning': 5,
+  'ac': 5,
+  'kitchen': 8,
+  'free parking': 9,
+  'parking': 9,
+  'pool': 7,
+  'hot tub': 25,
+  'jacuzzi': 25,
+  'ev charger': 97,
+  'tv': 58,
+  'washer': 33,
+  'dryer': 34,
+  'heating': 30,
+  'dedicated workspace': 47,
+  'workspace': 47,
+  'hair dryer': 45,
+  'iron': 46,
+  'crib': 286,
+  'king bed': 1000,
+  'gym': 15,
+  'bbq grill': 99,
+  'bbq': 99,
+  'grill': 99,
+  'breakfast': 16,
+  'indoor fireplace': 27,
+  'fireplace': 27,
+  'smoking allowed': 11,
+  'self check-in': 51,
+  'self checkin': 51,
+  'smoke alarm': 35,
+  'carbon monoxide alarm': 36,
+};
+
+// Property type name → l2_property_type_id
+const PROPERTY_TYPE_IDS: Record<string, number> = {
+  'house': 1,
+  'guesthouse': 2,
+  'apartment': 3,
+};
 
 // Utility functions
 const USER_AGENT = "ModelContextProtocol/1.0 (Autonomous; +https://github.com/modelcontextprotocol/servers)";
@@ -256,6 +338,15 @@ async function handleAirbnbSearch(params: any) {
     pets = 0,
     minPrice,
     maxPrice,
+    amenities,
+    roomType,
+    propertyTypes,
+    minBedrooms,
+    minBeds,
+    minBathrooms,
+    instantBook,
+    selfCheckIn,
+    freeCancellation,
     cursor,
     ignoreRobotsText = false,
   } = params;
@@ -287,12 +378,62 @@ async function handleAirbnbSearch(params: any) {
   // Add price range
   if (minPrice) searchUrl.searchParams.append("price_min", minPrice.toString());
   if (maxPrice) searchUrl.searchParams.append("price_max", maxPrice.toString());
-  
-  // Add room type
-  // if (roomType) {
-  //   const roomTypeParam = roomType.toLowerCase().replace(/\s+/g, '_');
-  //   searchUrl.searchParams.append("room_types[]", roomTypeParam);
-  // }
+
+  // Add amenities filter
+  if (amenities && Array.isArray(amenities)) {
+    const addedIds = new Set<number>();
+    for (const amenity of amenities) {
+      let id: number | undefined;
+      if (typeof amenity === 'number') {
+        id = amenity;
+      } else {
+        id = AMENITY_IDS[String(amenity).toLowerCase().trim()];
+      }
+      if (id !== undefined && !addedIds.has(id)) {
+        searchUrl.searchParams.append("amenities[]", id.toString());
+        addedIds.add(id);
+      }
+    }
+  }
+
+  // Add self check-in as amenity (ID 51)
+  if (selfCheckIn) {
+    searchUrl.searchParams.append("amenities[]", "51");
+  }
+
+  // Add room type filter (type of place)
+  if (roomType) {
+    const roomTypeLower = roomType.toLowerCase().replace(/_/g, ' ');
+    if (roomTypeLower === 'entire home' || roomTypeLower === 'entire_home') {
+      searchUrl.searchParams.append("room_types[]", "Entire home/apt");
+    } else if (roomTypeLower === 'private room' || roomTypeLower === 'private_room') {
+      searchUrl.searchParams.append("room_types[]", "Private room");
+    } else if (roomTypeLower === 'hotel room' || roomTypeLower === 'hotel_room') {
+      searchUrl.searchParams.append("kg_and_tags[]", "Tag:9613");
+    }
+  }
+
+  // Add property type filter
+  if (propertyTypes && Array.isArray(propertyTypes)) {
+    for (const propType of propertyTypes) {
+      const lower = propType.toLowerCase().trim();
+      const id = PROPERTY_TYPE_IDS[lower];
+      if (id !== undefined) {
+        searchUrl.searchParams.append("l2_property_type_ids[]", id.toString());
+      } else if (lower === 'hotel') {
+        searchUrl.searchParams.append("kg_and_tags[]", "Tag:9613");
+      }
+    }
+  }
+
+  // Add rooms and beds filters
+  if (minBedrooms) searchUrl.searchParams.append("min_bedrooms", parseInt(minBedrooms.toString()).toString());
+  if (minBeds) searchUrl.searchParams.append("min_beds", parseInt(minBeds.toString()).toString());
+  if (minBathrooms) searchUrl.searchParams.append("min_bathrooms", parseInt(minBathrooms.toString()).toString());
+
+  // Add booking option filters
+  if (instantBook) searchUrl.searchParams.append("ib", "true");
+  if (freeCancellation) searchUrl.searchParams.append("flexible_cancellation", "true");
 
   // Add cursor for pagination
   if (cursor) {
@@ -607,6 +748,69 @@ async function handleAirbnbListingDetails(params: any) {
         }],
         isError: true
       };
+    }
+
+    // Fetch full photo gallery with categories (non-fatal if unavailable)
+    try {
+      const modalUrl = new URL(listingUrl.toString());
+      modalUrl.searchParams.set('modal', 'PHOTO_TOUR_SCROLLABLE');
+
+      const modalResponse = await fetchWithUserAgent(modalUrl.toString());
+      const modalHtml = await modalResponse.text();
+      const $modal = cheerio.load(modalHtml);
+
+      const modalScript = $modal('#data-deferred-state-0').first().text();
+      const modalSections = JSON.parse(modalScript).niobeClientData[0][1]
+        .data.presentation.stayProductDetailPage.sections.sections;
+
+      const photoSection = modalSections.find((s: any) => s.sectionId === 'PHOTO_TOUR_SCROLLABLE_MODAL');
+
+      if (photoSection?.section) {
+        const { mediaItems, roomTourLayoutInfos } = photoSection.section;
+
+        // Build id → { url, label } lookup
+        const mediaMap: Record<string, { url: string; label: string }> = {};
+        for (const item of (mediaItems || [])) {
+          if (item.id && item.baseUrl) {
+            mediaMap[item.id] = { url: item.baseUrl, label: item.accessibilityLabel || '' };
+          }
+        }
+
+        // Build categorised groups from roomTourLayoutInfos
+        const roomTourItems = roomTourLayoutInfos?.[0]?.roomTourItems || [];
+        const categories: Array<{ title: string; photos: Array<{ url: string; label: string }> }> = [];
+        const categorisedIds = new Set<string>();
+
+        for (const group of roomTourItems) {
+          const photos = (group.imageIds || [])
+            .map((imgId: string) => mediaMap[imgId])
+            .filter(Boolean);
+          if (photos.length > 0) {
+            photos.forEach((_: any, i: number) => categorisedIds.add((group.imageIds || [])[i]));
+            categories.push({ title: group.title, photos });
+          }
+        }
+
+        // Append any photos not covered by a category
+        const uncategorised = Object.entries(mediaMap)
+          .filter(([imgId]) => !categorisedIds.has(imgId))
+          .map(([, v]) => v);
+        if (uncategorised.length > 0) {
+          categories.push({ title: 'Other', photos: uncategorised });
+        }
+
+        (details as any[]).push({ id: 'PHOTO_TOUR', categories });
+        log('info', 'Photo gallery fetched successfully', {
+          id,
+          totalPhotos: Object.keys(mediaMap).length,
+          categories: categories.map(c => `${c.title} (${c.photos.length})`),
+        });
+      }
+    } catch (photoError) {
+      log('warn', 'Failed to fetch photo gallery (non-fatal)', {
+        error: photoError instanceof Error ? photoError.message : String(photoError),
+        id,
+      });
     }
 
     return {
