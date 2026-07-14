@@ -147,7 +147,11 @@ const AIRBNB_TOOLS = [
 
 // Utility functions
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-const BASE_URL = "https://www.airbnb.com";
+// airbnb.com issues a JS-only (onload form submit) redirect to airbnb.ca for
+// requests originating from Canadian IPs. node-fetch doesn't execute JS, so
+// that redirect stub (no #data-deferred-state-0 script) was breaking every
+// search/listing parse. Hitting airbnb.ca directly avoids the redirect.
+const BASE_URL = process.env.AIRBNB_BASE_URL || "https://www.airbnb.ca";
 
 // Geocode location using Photon (fast, no rate limits) with Nominatim fallback.
 // This bypasses Airbnb's broken server-side geocoding for non-US locations.
