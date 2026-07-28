@@ -1,4 +1,30 @@
 /**
+ * Decode a `demandStayListing.id` — base64 of `"DemandStayListing:<numeric id>"`.
+ *
+ * The decode cannot be trusted on its own. `Buffer.from(x, "base64")` does not throw on
+ * invalid input; it silently skips characters outside the alphabet and decodes whatever
+ * remains. So `"Q29ycnVwdDox-MjM0NQ=="` — malformed, because of the hyphen — still decodes
+ * cleanly to `"Corrupt:12345"`, and a naive `split(":")[1]` hands back the plausible-looking
+ * id `12345` for a listing that does not exist. A try/catch cannot help, because nothing
+ * throws.
+ *
+ * The guard is therefore on the decoded VALUE, not on the encoding: it must be exactly the
+ * entity we expect. Returns undefined otherwise, so the caller omits the id rather than
+ * publishing a fabricated one — and, per partial-output, keeps every other field.
+ */
+export function decodeListingId(encoded: unknown): string | undefined {
+  if (typeof encoded !== "string" || encoded.length === 0) return undefined;
+  let decoded: string;
+  try {
+    decoded = Buffer.from(encoded, "base64").toString("utf8");
+  } catch {
+    return undefined;
+  }
+  const match = /^DemandStayListing:(\d+)$/.exec(decoded);
+  return match ? match[1] : undefined;
+}
+
+/**
  * Flatten one Airbnb search result into a shallow object.
  *
  * The payload Airbnb ships is shaped for a React tree, not for a reader. A single
@@ -21,16 +47,7 @@ export function compactSearchResult(raw: any, baseUrl: string): any {
   if (!raw || typeof raw !== "object") return raw;
 
   const listing = raw.demandStayListing ?? {};
-  let id: string | undefined;
-  if (typeof listing.id === "string") {
-    // Base64 of "DemandStayListing:<numeric id>".
-    try {
-      const decoded = Buffer.from(listing.id, "base64").toString("utf8");
-      id = decoded.includes(":") ? decoded.split(":")[1] : undefined;
-    } catch {
-      id = undefined;
-    }
-  }
+  const id = decodeListingId(listing.id);
 
   const coordinate = listing.location?.coordinate ?? {};
   const price = raw.structuredDisplayPrice ?? {};

@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, compactSearchResult } from "./util.js";
+import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, compactSearchResult, decodeListingId } from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -572,8 +572,14 @@ async function handleAirbnbSearch(params: any) {
           .map((result: any) => flattenArraysInObject(pickBySchema(result, allowSearchResultSchema)))
           .map((result: any) => {
             if (compact) return compactSearchResult(result, BASE_URL);
-            const id = atob(result.demandStayListing.id).split(":")[1];
-            return {id, url: `${BASE_URL}/rooms/${id}`, ...result }
+            // atob throws on malformed base64, which would abort the whole map and
+            // lose every result over one bad listing. Validate instead and let a
+            // single unusable id cost only its own id field.
+            const id = decodeListingId(result.demandStayListing?.id);
+            // Omit rather than emit ".../rooms/undefined", which reads as a real link.
+            return id
+              ? { id, url: `${BASE_URL}/rooms/${id}`, ...result }
+              : { ...result };
           }),
         paginationInfo: results.paginationInfo
       }

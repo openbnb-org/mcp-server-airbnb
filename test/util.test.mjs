@@ -87,7 +87,45 @@ test("compactSearchResult returns non-objects unchanged", () => {
   assert.equal(compactSearchResult("x", BASE), "x");
 });
 
-test("compaction is a substantial byte reduction across the fixture set", () => {
+test("compaction saves bytes STRUCTURALLY, not just by dropping indentation", () => {
+  // Measured like-for-like: unindented against unindented, so formatting cannot
+  // flatter the result. Structure is the larger of the two effects (~64% here vs
+  // ~22% from indentation), and this is the number that must not regress.
+  const verbose = fixtures.map((r) => {
+    let id;
+    try {
+      id = Buffer.from(r.demandStayListing.id, "base64").toString("utf8").split(":")[1];
+    } catch {
+      id = undefined;
+    }
+    return { id, url: `${BASE}/rooms/${id}`, ...r };
+  });
+
+  const verboseFlat = Buffer.byteLength(JSON.stringify(verbose), "utf8");
+  const compactFlat = Buffer.byteLength(
+    JSON.stringify(fixtures.map((r) => compactSearchResult(r, BASE))),
+    "utf8"
+  );
+
+  const structural = 1 - compactFlat / verboseFlat;
+  assert.ok(
+    structural > 0.5,
+    `structural reduction should exceed 50%, got ${(structural * 100).toFixed(1)}% ` +
+      `(${verboseFlat} -> ${compactFlat} bytes, both unindented)`
+  );
+});
+
+test("dropping indentation is a real but secondary saving", () => {
+  const verbose = fixtures.map((r) => ({ ...r }));
+  const pretty = Buffer.byteLength(JSON.stringify(verbose, null, 2), "utf8");
+  const flat = Buffer.byteLength(JSON.stringify(verbose), "utf8");
+  const formatting = 1 - flat / pretty;
+  // Asserted as a band: large enough to be worth doing, small enough that nobody
+  // mistakes it for where the win comes from.
+  assert.ok(formatting > 0.1 && formatting < 0.4, `formatting saving was ${(formatting * 100).toFixed(1)}%`);
+});
+
+test("end-to-end compaction combines both effects", () => {
   // The verbose shape is what the server emits today: id + url spread over the
   // original nested result.
   const verbose = fixtures.map((r) => {
