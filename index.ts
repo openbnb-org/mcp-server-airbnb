@@ -631,6 +631,77 @@ async function handleAirbnbSearch(params: any) {
   }
 }
 
+/**
+ * Airbnb moved several PDP sections to client-side rendering. Their entries under
+ * `presentation.stayProductDetailPage.sections.sections` still exist, still report
+ * sectionContentStatus COMPLETE, but carry a `section` object containing nothing but
+ * `__typename`. AMENITIES_DEFAULT and HIGHLIGHTS_DEFAULT are both in that state, so
+ * the schema-driven extraction returns an empty shell rather than failing loudly.
+ *
+ * The content now lives on a sibling branch of the same payload:
+ *   niobeClientData[i][1].data.node.pdpPresentation
+ *
+ * Returns null when the branch is absent, so callers fall back to whatever the
+ * section tree gave them rather than losing data if Airbnb moves it again.
+ */
+function findPdpPresentation(clientData: any): any | null {
+  const entries = clientData?.niobeClientData;
+  if (!Array.isArray(entries)) return null;
+  for (const entry of entries) {
+    const pdp = entry?.[1]?.data?.node?.pdpPresentation;
+    if (pdp && typeof pdp === "object") return pdp;
+  }
+  return null;
+}
+
+/**
+ * Amenity groups, preserving each item's `available` flag.
+ *
+ * The flag is the whole point: Airbnb renders unavailable amenities struck through,
+ * and a listing that advertises air conditioning in its description while carrying
+ * `available: false` on the amenity is the exact case a reader needs to catch.
+ * Grouping by availability makes that impossible to skim past, where a flat list of
+ * titles would quietly assert the opposite of the truth.
+ */
+function extractAmenities(pdp: any): any | null {
+  const groups = pdp?.amenities?.seeAllAmenitiesGroups;
+  if (!Array.isArray(groups) || groups.length === 0) return null;
+
+  const mapped = groups.map((group: any) => {
+    const items = Array.isArray(group?.amenities) ? group.amenities : [];
+    const label = (a: any) => {
+      const sub = a?.subtitle?.text;
+      return sub ? `${a.title} (${sub})` : a?.title;
+    };
+    const available = items.filter((a: any) => a?.available !== false).map(label).filter(Boolean);
+    const unavailable = items.filter((a: any) => a?.available === false).map(label).filter(Boolean);
+    return {
+      title: group?.title,
+      ...(available.length ? { available } : {}),
+      ...(unavailable.length ? { unavailable } : {}),
+    };
+  });
+
+  return {
+    title: pdp?.amenities?.title ?? undefined,
+    subtitle: pdp?.amenities?.subtitle ?? undefined,
+    seeAllAmenitiesGroups: mapped,
+  };
+}
+
+function extractHighlights(pdp: any): any | null {
+  const highlights = pdp?.highlights;
+  if (!Array.isArray(highlights) || highlights.length === 0) return null;
+  return {
+    highlights: highlights
+      .map((h: any) => {
+        const sub = h?.subtitle;
+        return sub ? `${h?.title}: ${sub}` : h?.title;
+      })
+      .filter(Boolean),
+  };
+}
+
 async function handleAirbnbListingDetails(params: any) {
   const {
     id,
@@ -744,7 +815,7 @@ async function handleAirbnbListingDetails(params: any) {
       const sections = clientData.niobeClientData[0][1].data.presentation.stayProductDetailPage.sections.sections;
       sections.forEach((section: any) => cleanObject(section));
       
-      details = sections
+      let extracted: any[] = sections
         .filter((section: any) => allowSectionSchema.hasOwnProperty(section.sectionId))
         .map((section: any) => {
           return {
@@ -752,10 +823,42 @@ async function handleAirbnbListingDetails(params: any) {
             ...flattenArraysInObject(pickBySchema(section.section, allowSectionSchema[section.sectionId]))
           }
         });
-        
-      log('info', 'Listing details fetched successfully', { 
-        id, 
-        sectionsFound: Array.isArray(details) ? details.length : 0 
+
+      // Fill in the sections Airbnb now renders client-side. A stub reduces to just
+      // { id }, so an entry with no other keys is the signal to substitute. Sections
+      // that still carry real content are left untouched.
+      const pdp = findPdpPresentation(clientData);
+      const recovered: string[] = [];
+      if (pdp) {
+        const fromPdp: Record<string, any | null> = {
+          AMENITIES_DEFAULT: extractAmenities(pdp),
+          HIGHLIGHTS_DEFAULT: extractHighlights(pdp),
+        };
+
+        extracted = extracted.map((section: any) => {
+          const replacement = fromPdp[section.id];
+          if (replacement && Object.keys(section).length <= 1) {
+            recovered.push(section.id);
+            return { id: section.id, ...replacement };
+          }
+          return section;
+        });
+
+        // Also cover the case where the stub is dropped from the section list entirely.
+        for (const [sectionId, replacement] of Object.entries(fromPdp)) {
+          if (replacement && !extracted.some((s: any) => s.id === sectionId)) {
+            recovered.push(sectionId);
+            extracted.push({ id: sectionId, ...replacement });
+          }
+        }
+      }
+
+      details = extracted;
+
+      log('info', 'Listing details fetched successfully', {
+        id,
+        sectionsFound: extracted.length,
+        recoveredFromPdpPresentation: recovered.length ? recovered : undefined
       });
     } catch (parseError) {
       let parsedRaw: any = null;
