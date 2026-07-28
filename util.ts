@@ -25,6 +25,59 @@ export function decodeListingId(encoded: unknown): string | undefined {
 }
 
 /**
+ * Pull the price breakdown out of a search result while it still has structure.
+ *
+ * `explanationData.priceDetails` is an array of line GROUPS, each holding typed
+ * items — `DefaultExplanationLineItem` for the nightly subtotal,
+ * `DiscountedExplanationLineItem` for a reduction, `HighlightExplanationLineItem`
+ * for the post-discount summary. `flattenArraysInObject` joins the whole tree into
+ * one string, which loses the grouping, the types, and the sign of a discount:
+ *
+ *   "3 nights x $890.67: $2,672.00, Special offer: -$52.50, ..."
+ *
+ * It also drops `accessibilityLabel`, which is the only place Airbnb states whether
+ * a total excludes tax ("$2,522.00 total before taxes"). That label appears only on
+ * highlight items, so it is present only when a listing has an active discount —
+ * surfaced opportunistically here rather than promised, because it genuinely is not
+ * available for every listing.
+ *
+ * MUST be called before `cleanObject`, which strips the `__typename` this reads.
+ * Returns null when there is nothing structured to report.
+ */
+export function extractPriceBreakdown(raw: any): any | null {
+  const groups = raw?.structuredDisplayPrice?.explanationData?.priceDetails;
+  if (!Array.isArray(groups) || groups.length === 0) return null;
+
+  const TYPES: Record<string, string> = {
+    DiscountedExplanationLineItem: "discount",
+    HighlightExplanationLineItem: "total",
+  };
+
+  const lineItems: any[] = [];
+  let note: string | undefined;
+
+  for (const group of groups) {
+    const items = Array.isArray(group?.items) ? group.items : [];
+    for (const item of items) {
+      if (!item?.description && !item?.priceString) continue;
+      const type = TYPES[item?.__typename];
+      lineItems.push({
+        description: item.description,
+        price: item.priceString,
+        ...(type ? { type } : {}),
+      });
+      // e.g. "$2,522.00 total before taxes"
+      if (typeof item.accessibilityLabel === "string" && /before taxes/i.test(item.accessibilityLabel)) {
+        note = item.accessibilityLabel;
+      }
+    }
+  }
+
+  if (lineItems.length === 0) return null;
+  return { lineItems, ...(note ? { note } : {}) };
+}
+
+/**
  * Flatten one Airbnb search result into a shallow object.
  *
  * The payload Airbnb ships is shaped for a React tree, not for a reader. A single
@@ -43,7 +96,7 @@ export function decodeListingId(encoded: unknown): string | undefined {
  * is a context window. Returns only keys that have a value, so absent fields cost
  * nothing rather than serializing as null.
  */
-export function compactSearchResult(raw: any, baseUrl: string): any {
+export function compactSearchResult(raw: any, baseUrl: string, priceBreakdown?: any): any {
   if (!raw || typeof raw !== "object") return raw;
 
   const listing = raw.demandStayListing ?? {};
@@ -74,6 +127,13 @@ export function compactSearchResult(raw: any, baseUrl: string): any {
   for (const key of Object.keys(out)) {
     const v = out[key];
     if (v === undefined || v === null || v === "") delete out[key];
+  }
+
+  // The structured breakdown supersedes the flattened priceDetails string when
+  // one is available, so compact mode gains fidelity rather than trading it away.
+  if (priceBreakdown) {
+    delete out.priceDetails;
+    out.priceBreakdown = priceBreakdown;
   }
   return out;
 }

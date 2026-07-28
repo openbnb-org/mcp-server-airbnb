@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 
 import {
   compactSearchResult,
+  extractPriceBreakdown,
   cleanObject,
   pickBySchema,
   flattenArraysInObject,
@@ -149,6 +150,67 @@ test("end-to-end compaction combines both effects", () => {
     saved > 0.5,
     `expected >50% reduction, got ${(saved * 100).toFixed(1)}% (${before} -> ${after} bytes)`
   );
+});
+
+const prices = JSON.parse(
+  readFileSync(join(__dirname, "fixtures", "price-details.json"), "utf8")
+);
+
+test("extractPriceBreakdown flattens line groups into ordered line items", () => {
+  const out = extractPriceBreakdown(prices.discounted);
+  assert.deepEqual(out.lineItems, [
+    { description: "3 nights x $890.67", price: "$2,672.00" },
+    { description: "Special offer", price: "-$52.50", type: "discount" },
+    { description: "Price after discount", price: "$2,522.00", type: "total" },
+  ]);
+});
+
+test("extractPriceBreakdown labels discount and total items by their __typename", () => {
+  const items = extractPriceBreakdown(prices.discounted).lineItems;
+  assert.equal(items.find((i) => i.description === "Special offer").type, "discount");
+  assert.equal(items.find((i) => i.description === "Price after discount").type, "total");
+  // A plain subtotal is untyped rather than mislabelled.
+  assert.ok(!("type" in items[0]));
+});
+
+test("extractPriceBreakdown surfaces the before-taxes caveat when Airbnb states it", () => {
+  assert.equal(extractPriceBreakdown(prices.discounted).note, "$2,522.00 total before taxes");
+});
+
+test("extractPriceBreakdown omits the note when Airbnb does not state it", () => {
+  // The label lives only on highlight items, so most listings have no tax statement.
+  // Absent must mean absent — never a default that implies taxes are included.
+  const out = extractPriceBreakdown(prices.plain);
+  assert.ok(!("note" in out), "no note should be invented when the payload has none");
+  assert.deepEqual(out.lineItems, [
+    { description: "3 nights x $1,083.83", price: "$3,251.49" },
+  ]);
+});
+
+test("extractPriceBreakdown returns null when there is no price explanation", () => {
+  assert.equal(extractPriceBreakdown(prices.empty), null);
+  assert.equal(extractPriceBreakdown({}), null);
+  assert.equal(extractPriceBreakdown(null), null);
+});
+
+test("extractPriceBreakdown keeps the sign of a discount", () => {
+  // "-$52.50" flattened into a joined string loses nothing textually, but a caller
+  // summing line items needs the sign to survive as part of the value.
+  const items = extractPriceBreakdown(prices.discounted).lineItems;
+  assert.ok(items.some((i) => i.price.startsWith("-")));
+});
+
+test("compactSearchResult prefers a structured breakdown over the flattened string", () => {
+  const breakdown = extractPriceBreakdown(prices.discounted);
+  const out = compactSearchResult(typical, BASE, breakdown);
+  assert.deepEqual(out.priceBreakdown, breakdown);
+  assert.ok(!("priceDetails" in out), "the lossy string should not be emitted alongside");
+});
+
+test("compactSearchResult keeps the flattened string when no breakdown is supplied", () => {
+  const out = compactSearchResult(typical, BASE);
+  assert.equal(out.priceDetails, "3 nights x $376.55: $1,129.65");
+  assert.ok(!("priceBreakdown" in out));
 });
 
 // The helpers compaction is built on had no coverage at all.
