@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath } from "./util.js";
+import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights } from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -631,77 +631,6 @@ async function handleAirbnbSearch(params: any) {
   }
 }
 
-/**
- * Airbnb moved several PDP sections to client-side rendering. Their entries under
- * `presentation.stayProductDetailPage.sections.sections` still exist, still report
- * sectionContentStatus COMPLETE, but carry a `section` object containing nothing but
- * `__typename`. AMENITIES_DEFAULT and HIGHLIGHTS_DEFAULT are both in that state, so
- * the schema-driven extraction returns an empty shell rather than failing loudly.
- *
- * The content now lives on a sibling branch of the same payload:
- *   niobeClientData[i][1].data.node.pdpPresentation
- *
- * Returns null when the branch is absent, so callers fall back to whatever the
- * section tree gave them rather than losing data if Airbnb moves it again.
- */
-function findPdpPresentation(clientData: any): any | null {
-  const entries = clientData?.niobeClientData;
-  if (!Array.isArray(entries)) return null;
-  for (const entry of entries) {
-    const pdp = entry?.[1]?.data?.node?.pdpPresentation;
-    if (pdp && typeof pdp === "object") return pdp;
-  }
-  return null;
-}
-
-/**
- * Amenity groups, preserving each item's `available` flag.
- *
- * The flag is the whole point: Airbnb renders unavailable amenities struck through,
- * and a listing that advertises air conditioning in its description while carrying
- * `available: false` on the amenity is the exact case a reader needs to catch.
- * Grouping by availability makes that impossible to skim past, where a flat list of
- * titles would quietly assert the opposite of the truth.
- */
-function extractAmenities(pdp: any): any | null {
-  const groups = pdp?.amenities?.seeAllAmenitiesGroups;
-  if (!Array.isArray(groups) || groups.length === 0) return null;
-
-  const mapped = groups.map((group: any) => {
-    const items = Array.isArray(group?.amenities) ? group.amenities : [];
-    const label = (a: any) => {
-      const sub = a?.subtitle?.text;
-      return sub ? `${a.title} (${sub})` : a?.title;
-    };
-    const available = items.filter((a: any) => a?.available !== false).map(label).filter(Boolean);
-    const unavailable = items.filter((a: any) => a?.available === false).map(label).filter(Boolean);
-    return {
-      title: group?.title,
-      ...(available.length ? { available } : {}),
-      ...(unavailable.length ? { unavailable } : {}),
-    };
-  });
-
-  return {
-    title: pdp?.amenities?.title ?? undefined,
-    subtitle: pdp?.amenities?.subtitle ?? undefined,
-    seeAllAmenitiesGroups: mapped,
-  };
-}
-
-function extractHighlights(pdp: any): any | null {
-  const highlights = pdp?.highlights;
-  if (!Array.isArray(highlights) || highlights.length === 0) return null;
-  return {
-    highlights: highlights
-      .map((h: any) => {
-        const sub = h?.subtitle;
-        return sub ? `${h?.title}: ${sub}` : h?.title;
-      })
-      .filter(Boolean),
-  };
-}
-
 async function handleAirbnbListingDetails(params: any) {
   const {
     id,
@@ -797,7 +726,8 @@ async function handleAirbnbListingDetails(params: any) {
     const html = await response.text();
     const $ = cheerio.load(html);
     
-    let details = {};
+    // Always an array. A consumer doing details.find(...) should never meet an object.
+    let details: any[] = [];
     let scriptContent = '';
     
     try {
@@ -824,31 +754,34 @@ async function handleAirbnbListingDetails(params: any) {
           }
         });
 
-      // Fill in the sections Airbnb now renders client-side. A stub reduces to just
-      // { id }, so an entry with no other keys is the signal to substitute. Sections
-      // that still carry real content are left untouched.
+      // Fill in the sections Airbnb now renders client-side.
+      //
+      // Substitute only when the content key this section exists to carry is actually
+      // absent. Counting keys would be fragile in the direction that loses data: if
+      // Airbnb ever adds one placeholder key to a stub, a count-based test would decide
+      // the section was populated and silently discard the recovered content.
       const pdp = findPdpPresentation(clientData);
       const recovered: string[] = [];
       if (pdp) {
-        const fromPdp: Record<string, any | null> = {
-          AMENITIES_DEFAULT: extractAmenities(pdp),
-          HIGHLIGHTS_DEFAULT: extractHighlights(pdp),
+        const fromPdp: Record<string, { value: any | null; contentKey: string }> = {
+          AMENITIES_DEFAULT: { value: extractAmenities(pdp), contentKey: "seeAllAmenitiesGroups" },
+          HIGHLIGHTS_DEFAULT: { value: extractHighlights(pdp), contentKey: "highlights" },
         };
 
         extracted = extracted.map((section: any) => {
           const replacement = fromPdp[section.id];
-          if (replacement && Object.keys(section).length <= 1) {
+          if (replacement?.value && !section[replacement.contentKey]) {
             recovered.push(section.id);
-            return { id: section.id, ...replacement };
+            return { id: section.id, ...replacement.value };
           }
           return section;
         });
 
         // Also cover the case where the stub is dropped from the section list entirely.
         for (const [sectionId, replacement] of Object.entries(fromPdp)) {
-          if (replacement && !extracted.some((s: any) => s.id === sectionId)) {
+          if (replacement.value && !extracted.some((s: any) => s.id === sectionId)) {
             recovered.push(sectionId);
-            extracted.push({ id: sectionId, ...replacement });
+            extracted.push({ id: sectionId, ...replacement.value });
           }
         }
       }

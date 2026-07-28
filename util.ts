@@ -74,3 +74,74 @@ export function flattenArraysInObject(input: any, inArray: boolean = false): any
     return input;
   }
 }
+
+/**
+ * Airbnb moved several PDP sections to client-side rendering. Their entries under
+ * `presentation.stayProductDetailPage.sections.sections` still exist, still report
+ * sectionContentStatus COMPLETE, but carry a `section` object containing nothing but
+ * `__typename`. AMENITIES_DEFAULT and HIGHLIGHTS_DEFAULT are both in that state, so
+ * the schema-driven extraction returns an empty shell rather than failing loudly.
+ *
+ * The content now lives on a sibling branch of the same payload:
+ *   niobeClientData[i][1].data.node.pdpPresentation
+ *
+ * Returns null when the branch is absent, so callers fall back to whatever the
+ * section tree gave them rather than losing data if Airbnb moves it again.
+ */
+export function findPdpPresentation(clientData: any): any | null {
+  const entries = clientData?.niobeClientData;
+  if (!Array.isArray(entries)) return null;
+  for (const entry of entries) {
+    const pdp = entry?.[1]?.data?.node?.pdpPresentation;
+    if (pdp && typeof pdp === "object") return pdp;
+  }
+  return null;
+}
+
+/**
+ * Amenity groups, preserving each item's `available` flag.
+ *
+ * The flag is the whole point: Airbnb renders unavailable amenities struck through,
+ * and a listing that advertises air conditioning in its description while carrying
+ * `available: false` on the amenity is the exact case a reader needs to catch.
+ * Grouping by availability makes that impossible to skim past, where a flat list of
+ * titles would quietly assert the opposite of the truth.
+ */
+export function extractAmenities(pdp: any): any | null {
+  const groups = pdp?.amenities?.seeAllAmenitiesGroups;
+  if (!Array.isArray(groups) || groups.length === 0) return null;
+
+  const mapped = groups.map((group: any) => {
+    const items = Array.isArray(group?.amenities) ? group.amenities : [];
+    const label = (a: any) => {
+      const sub = a?.subtitle?.text;
+      return sub ? `${a.title} (${sub})` : a?.title;
+    };
+    const available = items.filter((a: any) => a?.available !== false).map(label).filter(Boolean);
+    const unavailable = items.filter((a: any) => a?.available === false).map(label).filter(Boolean);
+    return {
+      title: group?.title,
+      ...(available.length ? { available } : {}),
+      ...(unavailable.length ? { unavailable } : {}),
+    };
+  });
+
+  return {
+    title: pdp?.amenities?.title ?? undefined,
+    subtitle: pdp?.amenities?.subtitle ?? undefined,
+    seeAllAmenitiesGroups: mapped,
+  };
+}
+
+export function extractHighlights(pdp: any): any | null {
+  const highlights = pdp?.highlights;
+  if (!Array.isArray(highlights) || highlights.length === 0) return null;
+  return {
+    highlights: highlights
+      .map((h: any) => {
+        const sub = h?.subtitle;
+        return sub ? `${h?.title}: ${sub}` : h?.title;
+      })
+      .filter(Boolean),
+  };
+}
