@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights } from "./util.js";
+import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, compactSearchResult } from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -91,6 +91,10 @@ const AIRBNB_SEARCH_TOOL: Tool = {
       ignoreRobotsText: {
         type: "boolean",
         description: "Ignore robots.txt rules for this request"
+      },
+      compact: {
+        type: "boolean",
+        description: "Return a flattened result shape and unindented JSON. Same information, roughly 60% fewer tokens. Recommended when results are read by a model rather than parsed by code."
       }
     },
     required: ["location"]
@@ -414,6 +418,7 @@ async function handleAirbnbSearch(params: any) {
     cursor,
     propertyType,
     ignoreRobotsText = false,
+    compact = false,
   } = params;
 
   // Build search URL
@@ -566,6 +571,7 @@ async function handleAirbnbSearch(params: any) {
         searchResults: results.searchResults
           .map((result: any) => flattenArraysInObject(pickBySchema(result, allowSearchResultSchema)))
           .map((result: any) => {
+            if (compact) return compactSearchResult(result, BASE_URL);
             const id = atob(result.demandStayListing.id).split(":")[1];
             return {id, url: `${BASE_URL}/rooms/${id}`, ...result }
           }),
@@ -601,13 +607,12 @@ async function handleAirbnbSearch(params: any) {
       };
     }
 
+    const payload = { searchUrl: searchUrl.toString(), ...staysSearchResults };
     return {
       content: [{
         type: "text",
-        text: JSON.stringify({
-          searchUrl: searchUrl.toString(),
-          ...staysSearchResults
-        }, null, 2)
+        // Indentation is ~25% of this response and buys a reader nothing.
+        text: compact ? JSON.stringify(payload) : JSON.stringify(payload, null, 2)
       }],
       isError: false
     };

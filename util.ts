@@ -1,3 +1,66 @@
+/**
+ * Flatten one Airbnb search result into a shallow object.
+ *
+ * The payload Airbnb ships is shaped for a React tree, not for a reader. A single
+ * result spends most of its bytes on structure rather than information:
+ *
+ *   - `demandStayListing.id` is base64 of "DemandStayListing:<id>", so it restates
+ *     the id we already extract
+ *   - the listing name arrives at
+ *     `demandStayListing.description.name.localizedStringWithTranslationPreference`,
+ *     which costs more in key names than the name itself
+ *   - `explanationData.title` is the constant string "Price details", repeated once
+ *     per result
+ *   - `mapSecondaryLine` and `secondaryLine` are usually empty strings
+ *
+ * None of that survives contact with a consumer, and for an MCP server the consumer
+ * is a context window. Returns only keys that have a value, so absent fields cost
+ * nothing rather than serializing as null.
+ */
+export function compactSearchResult(raw: any, baseUrl: string): any {
+  if (!raw || typeof raw !== "object") return raw;
+
+  const listing = raw.demandStayListing ?? {};
+  let id: string | undefined;
+  if (typeof listing.id === "string") {
+    // Base64 of "DemandStayListing:<numeric id>".
+    try {
+      const decoded = Buffer.from(listing.id, "base64").toString("utf8");
+      id = decoded.includes(":") ? decoded.split(":")[1] : undefined;
+    } catch {
+      id = undefined;
+    }
+  }
+
+  const coordinate = listing.location?.coordinate ?? {};
+  const price = raw.structuredDisplayPrice ?? {};
+
+  // priceDetails arrives with a trailing ", " from the array flattening upstream.
+  const priceDetails =
+    typeof price.explanationData?.priceDetails === "string"
+      ? price.explanationData.priceDetails.replace(/,\s*$/, "")
+      : undefined;
+
+  const out: Record<string, any> = {
+    id,
+    url: id ? `${baseUrl}/rooms/${id}` : undefined,
+    name: listing.description?.name?.localizedStringWithTranslationPreference,
+    layout: raw.structuredContent?.primaryLine,
+    badges: raw.badges,
+    rating: raw.avgRatingA11yLabel,
+    price: price.primaryLine?.accessibilityLabel,
+    priceDetails,
+    latitude: coordinate.latitude,
+    longitude: coordinate.longitude,
+  };
+
+  for (const key of Object.keys(out)) {
+    const v = out[key];
+    if (v === undefined || v === null || v === "") delete out[key];
+  }
+  return out;
+}
+
 export function cleanObject(obj: any) {
   Object.keys(obj).forEach(key => {
     if (obj[key] == null || key === "__typename") {

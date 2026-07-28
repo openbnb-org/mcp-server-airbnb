@@ -1,0 +1,73 @@
+[
+  {
+    "_comment": "Captured from a live Welches, Oregon search (2026-08-15 to 2026-08-18, 7 adults), after pickBySchema + flattenArraysInObject. This is the exact shape compactSearchResult receives.",
+    "demandStayListing": {
+      "id": "RGVtYW5kU3RheUxpc3Rpbmc6MTcwMDg5NDIyNDk2NDYwMjgzOA==",
+      "description": {
+        "name": {
+          "localizedStringWithTranslationPreference": "NEW! Mt. Hood Escape | Pool, Bunk Room & Dogs Okay"
+        }
+      },
+      "location": {
+        "coordinate": {
+          "latitude": 45.3651,
+          "longitude": -121.9887
+        }
+      }
+    },
+    "badges": "Superhost",
+    "structuredContent": {
+      "mapSecondaryLine": "",
+      "primaryLine": "4 bedrooms, 5 beds, 2 baths",
+      "secondaryLine": ""
+    },
+    "avgRatingA11yLabel": "New place to stay",
+    "structuredDisplayPrice": {
+      "primaryLine": {
+        "accessibilityLabel": "$1,130 for 3 nights, originally $1,368"
+      },
+      "explanationData": {
+        "title": "Price details",
+        "priceDetails": "3 nights x $376.55: $1,129.65, "
+      }
+    }
+  },
+  {
+    "_comment": "A result with no badges and no coordinate — exercises omission of absent fields.",
+    "demandStayListing": {
+      "id": "RGVtYW5kU3RheUxpc3Rpbmc6NTM2MTA3MTU=",
+      "description": {
+        "name": {
+          "localizedStringWithTranslationPreference": "Hilltop Home w/ Hot Tub"
+        }
+      },
+      "location": {}
+    },
+    "badges": "",
+    "structuredContent": {
+      "mapSecondaryLine": "",
+      "primaryLine": "4 bedrooms, 6 beds, 2.5 baths",
+      "secondaryLine": ""
+    },
+    "avgRatingA11yLabel": "4.95 out of 5 average rating, 191 reviews",
+    "structuredDisplayPrice": {
+      "primaryLine": {
+        "accessibilityLabel": "$1,012 for 3 nights"
+      },
+      "explanationData": {
+        "title": "Price details",
+        "priceDetails": "3 nights x $337.33: $1,011.99, "
+      }
+    }
+  },
+  {
+    "_comment": "Malformed: unparseable listing id and a missing price block. Must not throw.",
+    "demandStayListing": {
+      "id": "not-valid-base64-at-all",
+      "description": {}
+    },
+    "structuredContent": {
+      "primaryLine": "2 bedrooms, 2 beds, 1 bath"
+    }
+  }
+]
