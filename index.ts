@@ -88,6 +88,50 @@ const AIRBNB_SEARCH_TOOL: Tool = {
         enum: ["entire_home", "private_room", "shared_room", "hotel_room"],
         description: "Filter by property type: 'entire_home' (entire homes/apartments), 'private_room' (private rooms in shared homes), 'shared_room' (shared/dorm-style rooms), 'hotel_room' (hotel rooms)"
       },
+      amenities: {
+        type: "array",
+        items: {
+          type: "string",
+          enum: ["wifi", "air_conditioning", "washer", "kitchen", "free_parking", "pool", "hot_tub", "king_bed", "self_checkin"]
+        },
+        description: "Filter to listings that have all of these amenities. 'king_bed' lives in Airbnb's amenities list (not a separate bed-type filter)."
+      },
+      instantBook: {
+        type: "boolean",
+        description: "Filter to listings with Instant Book enabled (no host approval needed)."
+      },
+      guestFavorite: {
+        type: "boolean",
+        description: "Filter to Airbnb's curated 'Guest favorite' quality bucket."
+      },
+      minBedrooms: {
+        type: "number",
+        description: "Minimum number of bedrooms."
+      },
+      minBeds: {
+        type: "number",
+        description: "Minimum number of beds (any type — to filter by type use amenities, e.g. ['king_bed'])."
+      },
+      minBathrooms: {
+        type: "number",
+        description: "Minimum number of bathrooms."
+      },
+      ne_lat: {
+        type: "number",
+        description: "Manual bounding-box override: northeast latitude. Provide all four bbox values together (ne_lat, ne_lng, sw_lat, sw_lng) to skip the third-party geocoder for this request."
+      },
+      ne_lng: {
+        type: "number",
+        description: "Manual bounding-box override: northeast longitude. See ne_lat."
+      },
+      sw_lat: {
+        type: "number",
+        description: "Manual bounding-box override: southwest latitude. See ne_lat."
+      },
+      sw_lng: {
+        type: "number",
+        description: "Manual bounding-box override: southwest longitude. See ne_lat."
+      },
       ignoreRobotsText: {
         type: "boolean",
         description: "Ignore robots.txt rules for this request"
@@ -294,6 +338,21 @@ const PROPERTY_TYPE_IDS: Record<string, string> = {
   hotel_room:   "4",
 };
 
+// Map canonical amenity names to Airbnb's internal numeric IDs.
+// Discovered by toggling each filter in the search modal and reading the URL —
+// Airbnb encodes selections as `amenities[]=<id>`. Add new entries here as needed.
+const AMENITY_IDS: Record<string, number> = {
+  wifi:             4,
+  air_conditioning: 5,
+  pool:             7,
+  kitchen:          8,
+  free_parking:     9,
+  hot_tub:          25,
+  washer:           33,
+  self_checkin:     51,
+  king_bed:         1000,
+};
+
 // Configuration from environment variables (set by DXT host)
 const IGNORE_ROBOTS_TXT = process.env.IGNORE_ROBOTS_TXT === "true" || process.argv.slice(2).includes("--ignore-robots-txt");
 // When true, skip the Photon/Nominatim geocoding step and let Airbnb's own
@@ -413,6 +472,16 @@ async function handleAirbnbSearch(params: any) {
     maxPrice,
     cursor,
     propertyType,
+    amenities,
+    instantBook,
+    guestFavorite,
+    minBedrooms,
+    minBeds,
+    minBathrooms,
+    ne_lat,
+    ne_lng,
+    sw_lat,
+    sw_lng,
     ignoreRobotsText = false,
   } = params;
 
@@ -427,11 +496,21 @@ async function handleAirbnbSearch(params: any) {
   
   // Add placeId
   if (placeId) searchUrl.searchParams.append("place_id", placeId);
-  
+
+  // Manual bounding-box override: agent supplied all four corners directly.
+  const manualBbox =
+    ne_lat != null && ne_lng != null && sw_lat != null && sw_lng != null;
+  if (manualBbox) {
+    searchUrl.searchParams.append("ne_lat", String(ne_lat));
+    searchUrl.searchParams.append("ne_lng", String(ne_lng));
+    searchUrl.searchParams.append("sw_lat", String(sw_lat));
+    searchUrl.searchParams.append("sw_lng", String(sw_lng));
+  }
+
   // Geocode and add bounding box to fix broken server-side geocoding.
-  // Skipped when placeId is supplied (Airbnb's place lookup is reliable for those)
-  // or when DISABLE_GEOCODING=true (user opt-out from third-party calls).
-  if (!placeId && !DISABLE_GEOCODING) {
+  // Skipped when placeId is supplied (Airbnb's place lookup is reliable for those),
+  // when a manual bbox was supplied, or when DISABLE_GEOCODING=true.
+  if (!placeId && !manualBbox && !DISABLE_GEOCODING) {
     const coords = await geocodeLocation(location);
     if (coords) {
       searchUrl.searchParams.append("ne_lat", coords.ne_lat);
@@ -467,6 +546,27 @@ async function handleAirbnbSearch(params: any) {
   if (propertyType && PROPERTY_TYPE_IDS[propertyType]) {
     searchUrl.searchParams.append("l2_property_type_ids[]", PROPERTY_TYPE_IDS[propertyType]);
   }
+
+  // Add amenity filters
+  if (Array.isArray(amenities)) {
+    for (const name of amenities) {
+      const id = AMENITY_IDS[name];
+      if (id != null) {
+        searchUrl.searchParams.append("amenities[]", String(id));
+      } else {
+        log("warn", "Unknown amenity name, skipping", { name });
+      }
+    }
+  }
+
+  // Quality / booking filters
+  if (instantBook) searchUrl.searchParams.append("ib", "true");
+  if (guestFavorite) searchUrl.searchParams.append("guest_favorite", "true");
+
+  // Minimum room/bed counts
+  if (minBedrooms != null) searchUrl.searchParams.append("min_bedrooms", String(minBedrooms));
+  if (minBeds != null) searchUrl.searchParams.append("min_beds", String(minBeds));
+  if (minBathrooms != null) searchUrl.searchParams.append("min_bathrooms", String(minBathrooms));
 
   // Add cursor for pagination
   if (cursor) {

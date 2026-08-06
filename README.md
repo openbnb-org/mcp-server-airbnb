@@ -30,6 +30,10 @@ If you'd rather self-host the open-source server, read on.
 - **International location support** via client-side geocoding, so non-US queries (e.g. "Paris, France", "Copenhagen, Denmark") return results in the right city
 - **Google Maps Place ID** integration for precise location targeting
 - **Property type filtering** for entire homes, private rooms, shared rooms, or hotel rooms
+- **Amenity filtering** including Wifi, A/C, kitchen, washer, free parking, pool, hot tub, king bed, and self check-in
+- **Quality and booking filters** including Guest Favorite (Airbnb's curated bucket) and Instant Book
+- **Minimum bedroom/bed/bathroom counts** for sizing requirements
+- **Manual bounding-box override** to skip the third-party geocoder when you already have map coordinates
 - **Date filtering** with check-in and check-out date support
 - **Guest configuration** including adults, children, infants, and pets
 - **Price range filtering** with minimum and maximum price constraints
@@ -135,6 +139,13 @@ Search for Airbnb listings with comprehensive filtering options.
 - `maxPrice` (optional): Maximum price per night
 - `cursor` (optional): Pagination cursor for browsing results
 - `propertyType` (optional): Filter by property type — `entire_home`, `private_room`, `shared_room`, or `hotel_room`
+- `amenities` (optional): Array of amenity names to require. Supported values: `wifi`, `air_conditioning`, `washer`, `kitchen`, `free_parking`, `pool`, `hot_tub`, `king_bed`, `self_checkin`. King bed is an amenity in Airbnb's filter modal, not a separate bed-type filter.
+- `instantBook` (optional): Filter to listings with Instant Book enabled (no host approval needed)
+- `guestFavorite` (optional): Filter to Airbnb's curated "Guest favorite" quality bucket
+- `minBedrooms` (optional): Minimum number of bedrooms
+- `minBeds` (optional): Minimum number of beds (any type — to filter by type use `amenities`)
+- `minBathrooms` (optional): Minimum number of bathrooms
+- `ne_lat`, `ne_lng`, `sw_lat`, `sw_lng` (optional): Manual bounding-box corners. Provide all four together to override the geocoded bbox and skip the third-party geocoder entirely for this request.
 - `ignoreRobotsText` (optional): Override robots.txt for this request
 
 **Returns:**
