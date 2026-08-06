@@ -18,7 +18,8 @@
   },
   "files": [
     "dist",
-    "sync-version.js"
+    "sync-version.js",
+    "!dist/*.mcpb"
   ],
   "scripts": {
     "build": "node sync-version.js && tsc && shx chmod +x dist/*.js",
