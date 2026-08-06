@@ -74,3 +74,121 @@ export function flattenArraysInObject(input: any, inArray: boolean = false): any
     return input;
   }
 }
+
+/**
+ * Airbnb moved several PDP sections to client-side rendering. Their entries under
+ * `presentation.stayProductDetailPage.sections.sections` still exist, still report
+ * sectionContentStatus COMPLETE, but carry a `section` object containing nothing but
+ * `__typename`. AMENITIES_DEFAULT and HIGHLIGHTS_DEFAULT are both in that state, so
+ * the schema-driven extraction returns an empty shell rather than failing loudly.
+ *
+ * The content now lives on a sibling branch of the same payload:
+ *   niobeClientData[i][1].data.node.pdpPresentation
+ *
+ * Returns null when the branch is absent, so callers fall back to whatever the
+ * section tree gave them rather than losing data if Airbnb moves it again.
+ */
+export function findPdpPresentation(clientData: any): any | null {
+  const entries = clientData?.niobeClientData;
+  if (!Array.isArray(entries)) return null;
+  for (const entry of entries) {
+    const pdp = entry?.[1]?.data?.node?.pdpPresentation;
+    if (pdp && typeof pdp === "object") return pdp;
+  }
+  return null;
+}
+
+/**
+ * Amenity groups, preserving each item's `available` flag.
+ *
+ * The flag is the whole point: Airbnb renders unavailable amenities struck through,
+ * and a listing that advertises air conditioning in its description while carrying
+ * `available: false` on the amenity is the exact case a reader needs to catch.
+ * Grouping by availability makes that impossible to skim past, where a flat list of
+ * titles would quietly assert the opposite of the truth.
+ */
+export function extractAmenities(pdp: any): any | null {
+  const groups = pdp?.amenities?.seeAllAmenitiesGroups;
+  if (!Array.isArray(groups) || groups.length === 0) return null;
+
+  const label = (a: any, markUnavailable: boolean) => {
+    const title = a?.title;
+    if (!title) return null;
+    // Airbnb has shipped this as both a plain string and a { text } object.
+    const sub = typeof a?.subtitle === "string" ? a.subtitle : a?.subtitle?.text;
+    const base = sub ? `${title} (${sub})` : title;
+    return markUnavailable && a?.available === false ? `${base} — unavailable` : base;
+  };
+
+  const mapped = groups
+    .map((group: any) => {
+      const items = Array.isArray(group?.amenities) ? group.amenities : [];
+      // Airbnb files struck-through amenities under a group of their own ("Not
+      // included"), where the category name already carries the meaning and marking
+      // each item would just repeat it. A group holding both is the case that needs
+      // help: the name cannot speak for every item, so the unavailable ones say it
+      // themselves rather than reading as amenities the listing offers.
+      const mixed =
+        items.some((a: any) => a?.available === false) &&
+        items.some((a: any) => a?.available !== false);
+      const amenities = items.map((a: any) => label(a, mixed)).filter(Boolean);
+      return amenities.length ? { title: group?.title, amenities } : null;
+    })
+    .filter(Boolean);
+
+  if (!mapped.length) return null;
+
+  return {
+    ...(pdp?.amenities?.title ? { title: pdp.amenities.title } : {}),
+    seeAllAmenitiesGroups: mapped,
+  };
+}
+
+/**
+ * Turn `[{ title: "Bathroom", amenities: [...] }, ...]` into `{ Bathroom: [...], ... }`.
+ *
+ * The category is the useful part of an amenity list, and as an array element its title
+ * survives only as a prefix inside one long joined string — a consumer that wants the
+ * bathroom amenities has to parse them back out, and cannot tell a category boundary
+ * from a comma inside a category. As an object key it is addressable directly, and
+ * flattenArraysInObject leaves top-level keys alone, so each category flattens to its
+ * own string. Airbnb's own "Not included" group lands here like any other category.
+ *
+ * Applied to both the section tree and the recovered pdpPresentation content so the two
+ * paths cannot disagree about the shape. Untitled groups fall back to "Other" rather
+ * than being dropped, and duplicate titles merge instead of overwriting.
+ */
+export function keyAmenityGroups(section: any): any {
+  if (section === null || typeof section !== "object" || Array.isArray(section)) return section;
+
+  const groups = section.seeAllAmenitiesGroups;
+  if (!Array.isArray(groups)) return section;
+
+  const keyed: Record<string, any[]> = {};
+  for (const group of groups) {
+    const items = Array.isArray(group?.amenities) ? group.amenities : [];
+    if (!items.length) continue;
+    const key = group?.title || "Other";
+    keyed[key] = keyed[key] ? keyed[key].concat(items) : items;
+  }
+
+  return { ...section, seeAllAmenitiesGroups: keyed };
+}
+
+export function extractHighlights(pdp: any): any | null {
+  const highlights = pdp?.highlights;
+  if (!Array.isArray(highlights) || highlights.length === 0) return null;
+  const mapped = highlights
+    .map((h: any) => {
+      const title = h?.title;
+      // Interpolating first would turn a missing title into the literal string
+      // "null: Free parking on premises", which .filter(Boolean) cannot catch.
+      if (!title) return null;
+      // Airbnb has shipped this as both a plain string and a { text } object.
+      const sub = typeof h?.subtitle === "string" ? h.subtitle : h?.subtitle?.text;
+      return sub ? `${title}: ${sub}` : title;
+    })
+    .filter(Boolean);
+
+  return mapped.length ? { highlights: mapped } : null;
+}

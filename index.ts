@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath } from "./util.js";
+import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, keyAmenityGroups } from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -726,7 +726,8 @@ async function handleAirbnbListingDetails(params: any) {
     const html = await response.text();
     const $ = cheerio.load(html);
     
-    let details = {};
+    // Always an array. A consumer doing details.find(...) should never meet an object.
+    let details: any[] = [];
     let scriptContent = '';
     
     try {
@@ -744,18 +745,56 @@ async function handleAirbnbListingDetails(params: any) {
       const sections = clientData.niobeClientData[0][1].data.presentation.stayProductDetailPage.sections.sections;
       sections.forEach((section: any) => cleanObject(section));
       
-      details = sections
+      let extracted: any[] = sections
         .filter((section: any) => allowSectionSchema.hasOwnProperty(section.sectionId))
         .map((section: any) => {
           return {
             id: section.sectionId,
-            ...flattenArraysInObject(pickBySchema(section.section, allowSectionSchema[section.sectionId]))
+            ...flattenArraysInObject(keyAmenityGroups(pickBySchema(section.section, allowSectionSchema[section.sectionId])))
           }
         });
-        
-      log('info', 'Listing details fetched successfully', { 
-        id, 
-        sectionsFound: Array.isArray(details) ? details.length : 0 
+
+      // Fill in the sections Airbnb now renders client-side.
+      //
+      // Substitute only when the content key this section exists to carry is actually
+      // absent. Counting keys would be fragile in the direction that loses data: if
+      // Airbnb ever adds one placeholder key to a stub, a count-based test would decide
+      // the section was populated and silently discard the recovered content.
+      const pdp = findPdpPresentation(clientData);
+      const recovered: string[] = [];
+      if (pdp) {
+        const fromPdp: Record<string, { value: any | null; contentKey: string }> = {
+          AMENITIES_DEFAULT: { value: extractAmenities(pdp), contentKey: "seeAllAmenitiesGroups" },
+          HIGHLIGHTS_DEFAULT: { value: extractHighlights(pdp), contentKey: "highlights" },
+        };
+
+        extracted = extracted.map((section: any) => {
+          const replacement = fromPdp[section.id];
+          if (replacement?.value && !section[replacement.contentKey]) {
+            recovered.push(section.id);
+            // Merge onto the section rather than replacing it. A stub can be partial —
+            // carrying a title while missing the content — and rebuilding from `id`
+            // alone would throw away whatever the section tree did manage to supply.
+            return { ...section, ...flattenArraysInObject(keyAmenityGroups(replacement.value)) };
+          }
+          return section;
+        });
+
+        // Also cover the case where the stub is dropped from the section list entirely.
+        for (const [sectionId, replacement] of Object.entries(fromPdp)) {
+          if (replacement.value && !extracted.some((s: any) => s.id === sectionId)) {
+            recovered.push(sectionId);
+            extracted.push({ id: sectionId, ...flattenArraysInObject(keyAmenityGroups(replacement.value)) });
+          }
+        }
+      }
+
+      details = extracted;
+
+      log('info', 'Listing details fetched successfully', {
+        id,
+        sectionsFound: extracted.length,
+        recoveredFromPdpPresentation: recovered.length ? recovered : undefined
       });
     } catch (parseError) {
       let parsedRaw: any = null;

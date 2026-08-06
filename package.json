@@ -24,6 +24,8 @@
     "build": "node sync-version.js && tsc && shx chmod +x dist/*.js",
     "pack": "npm run build && npx @anthropic-ai/mcpb pack . dist/mcp-server-airbnb.mcpb",
     "prepare": "npm run build",
+    "pretest": "npm run build",
+    "test": "node test-extension.js && node test-amenities.js",
     "watch": "tsc --watch",
     "sync-version": "node sync-version.js"
   },
