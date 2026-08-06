@@ -287,11 +287,16 @@ async function geocodeLocation(location: string): Promise<{
   return coords;
 }
 
-const PROPERTY_TYPE_IDS: Record<string, string> = {
-  entire_home:  "1",
-  private_room: "2",
-  shared_room:  "3",
-  hotel_room:   "4",
+// Airbnb's room type filter on the public search URL. The previous mapping
+// used `l2_property_type_ids[]=N`, which is the subtype filter (Apartment,
+// House, Villa, etc.) and does NOT exclude shared/private rooms, so listings
+// like "Room in a home" leaked through when `entire_home` was requested. The
+// correct filter is `room_types[]=<label>` with the URL-encoded room type.
+const ROOM_TYPE_LABELS: Record<string, string> = {
+  entire_home:  "Entire home/apt",
+  private_room: "Private room",
+  shared_room:  "Shared room",
+  hotel_room:   "Hotel room",
 };
 
 // Configuration from environment variables (set by DXT host)
@@ -463,9 +468,9 @@ async function handleAirbnbSearch(params: any) {
   if (minPrice != null) searchUrl.searchParams.append("price_min", minPrice.toString());
   if (maxPrice != null) searchUrl.searchParams.append("price_max", maxPrice.toString());
   
-  // Add property type filter
-  if (propertyType && PROPERTY_TYPE_IDS[propertyType]) {
-    searchUrl.searchParams.append("l2_property_type_ids[]", PROPERTY_TYPE_IDS[propertyType]);
+  // Add room type filter (Entire / Private / Shared / Hotel room)
+  if (propertyType && ROOM_TYPE_LABELS[propertyType]) {
+    searchUrl.searchParams.append("room_types[]", ROOM_TYPE_LABELS[propertyType]);
   }
 
   // Add cursor for pagination
