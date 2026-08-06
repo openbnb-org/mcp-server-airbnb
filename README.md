@@ -159,7 +159,17 @@ Get detailed information about a specific Airbnb listing.
 **Returns:**
 - Detailed property information including:
   - Location details with coordinates
-  - Amenities and facilities
+  - Amenities and facilities, as `seeAllAmenitiesGroups` — an object keyed by amenity category, so a category can be addressed directly. Amenities Airbnb shows struck through arrive under its own `"Not included"` category:
+
+    ```json
+    {
+      "seeAllAmenitiesGroups": {
+        "Bathroom": "Hair dryer",
+        "Heating and cooling": "AC - split type ductless system, Heating",
+        "Not included": "Dryer, Hot water"
+      }
+    }
+    ```
   - House rules and policies
   - Property highlights and descriptions
   - Direct link to the listing

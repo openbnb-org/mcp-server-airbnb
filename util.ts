@@ -111,26 +111,68 @@ export function extractAmenities(pdp: any): any | null {
   const groups = pdp?.amenities?.seeAllAmenitiesGroups;
   if (!Array.isArray(groups) || groups.length === 0) return null;
 
-  const mapped = groups.map((group: any) => {
-    const items = Array.isArray(group?.amenities) ? group.amenities : [];
-    const label = (a: any) => {
-      const sub = a?.subtitle?.text;
-      return sub ? `${a.title} (${sub})` : a?.title;
-    };
-    const available = items.filter((a: any) => a?.available !== false).map(label).filter(Boolean);
-    const unavailable = items.filter((a: any) => a?.available === false).map(label).filter(Boolean);
-    return {
-      title: group?.title,
-      ...(available.length ? { available } : {}),
-      ...(unavailable.length ? { unavailable } : {}),
-    };
-  });
+  const label = (a: any, markUnavailable: boolean) => {
+    const title = a?.title;
+    if (!title) return null;
+    // Airbnb has shipped this as both a plain string and a { text } object.
+    const sub = typeof a?.subtitle === "string" ? a.subtitle : a?.subtitle?.text;
+    const base = sub ? `${title} (${sub})` : title;
+    return markUnavailable && a?.available === false ? `${base} — unavailable` : base;
+  };
+
+  const mapped = groups
+    .map((group: any) => {
+      const items = Array.isArray(group?.amenities) ? group.amenities : [];
+      // Airbnb files struck-through amenities under a group of their own ("Not
+      // included"), where the category name already carries the meaning and marking
+      // each item would just repeat it. A group holding both is the case that needs
+      // help: the name cannot speak for every item, so the unavailable ones say it
+      // themselves rather than reading as amenities the listing offers.
+      const mixed =
+        items.some((a: any) => a?.available === false) &&
+        items.some((a: any) => a?.available !== false);
+      const amenities = items.map((a: any) => label(a, mixed)).filter(Boolean);
+      return amenities.length ? { title: group?.title, amenities } : null;
+    })
+    .filter(Boolean);
+
+  if (!mapped.length) return null;
 
   return {
-    title: pdp?.amenities?.title ?? undefined,
-    subtitle: pdp?.amenities?.subtitle ?? undefined,
+    ...(pdp?.amenities?.title ? { title: pdp.amenities.title } : {}),
     seeAllAmenitiesGroups: mapped,
   };
+}
+
+/**
+ * Turn `[{ title: "Bathroom", amenities: [...] }, ...]` into `{ Bathroom: [...], ... }`.
+ *
+ * The category is the useful part of an amenity list, and as an array element its title
+ * survives only as a prefix inside one long joined string — a consumer that wants the
+ * bathroom amenities has to parse them back out, and cannot tell a category boundary
+ * from a comma inside a category. As an object key it is addressable directly, and
+ * flattenArraysInObject leaves top-level keys alone, so each category flattens to its
+ * own string. Airbnb's own "Not included" group lands here like any other category.
+ *
+ * Applied to both the section tree and the recovered pdpPresentation content so the two
+ * paths cannot disagree about the shape. Untitled groups fall back to "Other" rather
+ * than being dropped, and duplicate titles merge instead of overwriting.
+ */
+export function keyAmenityGroups(section: any): any {
+  if (section === null || typeof section !== "object" || Array.isArray(section)) return section;
+
+  const groups = section.seeAllAmenitiesGroups;
+  if (!Array.isArray(groups)) return section;
+
+  const keyed: Record<string, any[]> = {};
+  for (const group of groups) {
+    const items = Array.isArray(group?.amenities) ? group.amenities : [];
+    if (!items.length) continue;
+    const key = group?.title || "Other";
+    keyed[key] = keyed[key] ? keyed[key].concat(items) : items;
+  }
+
+  return { ...section, seeAllAmenitiesGroups: keyed };
 }
 
 export function extractHighlights(pdp: any): any | null {

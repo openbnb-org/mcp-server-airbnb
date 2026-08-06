@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights } from "./util.js";
+import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, keyAmenityGroups } from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -750,7 +750,7 @@ async function handleAirbnbListingDetails(params: any) {
         .map((section: any) => {
           return {
             id: section.sectionId,
-            ...flattenArraysInObject(pickBySchema(section.section, allowSectionSchema[section.sectionId]))
+            ...flattenArraysInObject(keyAmenityGroups(pickBySchema(section.section, allowSectionSchema[section.sectionId])))
           }
         });
 
@@ -772,7 +772,7 @@ async function handleAirbnbListingDetails(params: any) {
           const replacement = fromPdp[section.id];
           if (replacement?.value && !section[replacement.contentKey]) {
             recovered.push(section.id);
-            return { id: section.id, ...replacement.value };
+            return { id: section.id, ...flattenArraysInObject(keyAmenityGroups(replacement.value)) };
           }
           return section;
         });
@@ -781,7 +781,7 @@ async function handleAirbnbListingDetails(params: any) {
         for (const [sectionId, replacement] of Object.entries(fromPdp)) {
           if (replacement.value && !extracted.some((s: any) => s.id === sectionId)) {
             recovered.push(sectionId);
-            extracted.push({ id: sectionId, ...replacement.value });
+            extracted.push({ id: sectionId, ...flattenArraysInObject(keyAmenityGroups(replacement.value)) });
           }
         }
       }

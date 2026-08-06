@@ -60,23 +60,41 @@ for (const c of CASES) {
     failures++;
     continue;
   }
+  // One object keyed by amenity category, each value a flattened string. Airbnb's
+  // "Not included" group is just another category.
   const groups = am.seeAllAmenitiesGroups;
-  const nAvail = groups.reduce((n, g) => n + (g.available?.length || 0), 0);
-  const nUnavail = groups.reduce((n, g) => n + (g.unavailable?.length || 0), 0);
-  console.log(`  groups: ${groups.length}, available: ${nAvail}, UNAVAILABLE: ${nUnavail}`);
+  const isCategoryMap =
+    groups !== null && typeof groups === "object" && !Array.isArray(groups) &&
+    Object.values(groups).every((x) => typeof x === "string");
+  if (!isCategoryMap) {
+    console.log(`  FAIL: seeAllAmenitiesGroups is not a category->string map, got ${Array.isArray(groups) ? "array" : typeof groups}`);
+    failures++;
+    continue;
+  }
+  console.log(`  categories: ${Object.keys(groups).join(", ")}`);
 
-  const heat = groups.find((g) => /heating and cooling/i.test(g.title || ""));
-  console.log("  Heating and cooling ->", JSON.stringify(heat?.available ?? []));
+  const excluded = Object.entries(groups).filter(([k]) => /not included/i.test(k));
+  console.log(`  unavailable: ${excluded.length ? excluded.map(([k, v]) => `${k} -> ${v}`).join(" ; ") : "none"}`);
 
-  const ac = (heat?.available || []).filter((t) => /air conditioning|ac\b|heat pump|mini.?split|ductless/i.test(t));
-  console.log("  A/C VERDICT:", ac.length ? ac.join(" + ") : "none listed as available");
+  const heat = Object.entries(groups).find(([k]) => /heating and cooling/i.test(k));
+  const ac = heat && /air conditioning|\bac\b|heat pump|mini.?split|ductless/i.exec(heat[1]);
+  console.log("  A/C:", ac ? `available ("${ac[0]}")` : "not listed as available");
 
-  if (nUnavail) {
-    for (const g of groups.filter((g) => g.unavailable?.length)) {
-      console.log(`  struck through [${g.title}]:`, g.unavailable.join(", "));
+  // An amenity the listing lacks must never read as one it offers: anything under an
+  // excluded category must not also appear under a normal one.
+  const offered = Object.entries(groups)
+    .filter(([k]) => !/not included/i.test(k))
+    .map(([, v]) => v)
+    .join(" | ");
+  for (const [, items] of excluded) {
+    for (const item of items.split(", ")) {
+      if (item && offered.includes(item)) {
+        console.log(`  FAIL: ${JSON.stringify(item)} is excluded but also listed as offered`);
+        failures++;
+      }
     }
   }
-  if (c.expect && !JSON.stringify(groups).includes(c.expect)) {
+  if (c.expect && !offered.includes(c.expect)) {
     console.log(`  FAIL: expected to find ${JSON.stringify(c.expect)}`);
     failures++;
   }
