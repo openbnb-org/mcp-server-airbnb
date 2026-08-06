@@ -42,6 +42,12 @@ If you'd rather self-host the open-source server, read on.
 - **Property descriptions** and key features
 - **Direct links** to Airbnb listings for easy booking
 
+### 💬 Guest Reviews
+- **Full-text reviews** with reviewer name, date, language, and host responses
+- **Server-side keyword search** so agents can answer questions like "any reviews mentioning noise?" without scanning everything
+- **Tag filtering** by Airbnb's AI-generated review categories (Cleanliness, Location, Hospitality, etc.)
+- **Pagination** through listings with hundreds of reviews
+
 ### 🛡️ Security & Compliance
 - **Robots.txt compliance** with configurable override for testing
 - **Request timeout management** to prevent hanging requests
@@ -173,6 +179,25 @@ Get detailed information about a specific Airbnb listing.
   - House rules and policies
   - Property highlights and descriptions
   - Direct link to the listing
+
+### `airbnb_listing_reviews`
+
+Fetch guest reviews for a specific listing, with optional server-side keyword search and tag filtering.
+
+**Parameters:**
+- `id` (required): Airbnb listing ID
+- `query` (optional): Free-text keyword search across review content (e.g. `"noise"`, `"air conditioning"`, `"wifi"`). Multi-word queries supported. Matched terms are returned wrapped in `<mark>` tags inside `comments`. Combines with `tagName`. Note: Airbnb's search is literal — it won't match synonyms (e.g. `"noise"` will not match `"loud"`); for exhaustive scans, omit `query` and search the full reviews client-side.
+- `tagName` (optional): Filter to a single Airbnb-tagged category. Use the uppercase `name` from the `reviewTags` field of the response, e.g. `"CLEANLINESS"`, `"LOCATION"`, `"HOSPITALITY"`, `"WALKABILITY"`, `"PARKING"`, `"VIEW"`. Combines with `query`.
+- `limit` (optional): Maximum number of reviews to return. Omit to fetch all matching reviews (popular listings can have hundreds — token-heavy).
+- `offset` (optional): Number of reviews to skip before returning (default: 0). Use with `limit` for paging.
+- `sortingPreference` (optional): `MOST_RECENT` (default), `BEST_QUALITY`, `RATING_DESC`, or `RATING_ASC`. `MOST_RECENT` gives a fair cross-section; `BEST_QUALITY` is Airbnb's default and surfaces positive reviews first.
+- `ignoreRobotsText` (optional): Override robots.txt for this request
+
+**Returns:**
+- `total` — total review count for the listing (or filtered subset)
+- `returned` — number of reviews in this response
+- `reviewTags` — Airbnb's AI-generated category tags with counts (use the `name` for the `tagName` filter)
+- `reviews` — array of `{id, createdAt, language, reviewer, comments, hostResponse}`
 
 ## Technical Details
 

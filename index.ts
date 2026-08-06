@@ -140,9 +140,50 @@ const AIRBNB_LISTING_DETAILS_TOOL: Tool = {
   }
 };
 
+const AIRBNB_LISTING_REVIEWS_TOOL: Tool = {
+  name: "airbnb_listing_reviews",
+  description: "Fetch guest reviews for a specific Airbnb listing. Returns the full text of each review along with Airbnb's AI-generated review tags. Supports server-side keyword search (query) and tag filtering (tagName) — prefer these over fetching everything on listings with many reviews. Matched terms are wrapped in <mark> tags in the comments field.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: {
+        type: "string",
+        description: "The Airbnb listing ID"
+      },
+      query: {
+        type: "string",
+        description: "Free-text keyword search across review content (e.g. 'noise', 'air conditioning', 'wifi'). Multi-word queries are supported. Returns only matching reviews with matched terms wrapped in <mark> tags. Combines with tagName."
+      },
+      tagName: {
+        type: "string",
+        description: "Filter to a single Airbnb-tagged category. Use the uppercase 'name' from the reviewTags response field, e.g. 'CLEANLINESS', 'LOCATION', 'HOSPITALITY', 'WALKABILITY', 'PARKING', 'VIEW'. Bogus names silently return zero results. Combines with query."
+      },
+      limit: {
+        type: "number",
+        description: "Maximum number of reviews to return. Omit to fetch all matching reviews (after filters)."
+      },
+      offset: {
+        type: "number",
+        description: "Number of reviews to skip before returning. Defaults to 0. Use with limit for paging."
+      },
+      sortingPreference: {
+        type: "string",
+        enum: ["MOST_RECENT", "BEST_QUALITY", "RATING_DESC", "RATING_ASC"],
+        description: "Sort order. Defaults to MOST_RECENT, which gives a fair cross-section. BEST_QUALITY is Airbnb's default and surfaces positive reviews first."
+      },
+      ignoreRobotsText: {
+        type: "boolean",
+        description: "Ignore robots.txt rules for this request"
+      }
+    },
+    required: ["id"]
+  }
+};
+
 const AIRBNB_TOOLS = [
   AIRBNB_SEARCH_TOOL,
   AIRBNB_LISTING_DETAILS_TOOL,
+  AIRBNB_LISTING_REVIEWS_TOOL,
 ] as const;
 
 // Utility functions
@@ -854,6 +895,213 @@ async function handleAirbnbListingDetails(params: any) {
   }
 }
 
+// Airbnb's public web client key, embedded in their JS bundle. Stable for years
+// but technically rotatable. The persisted-query hash below is more fragile —
+// Airbnb regenerates it on deploys that touch the GraphQL schema. If reviews
+// fetches start returning PersistedQueryNotFound we'll need to refresh it
+// (capture from a real listing page, same way we did originally).
+const AIRBNB_API_KEY = "d306zoyjsyarp7ifhu67rjxn52tv0t20";
+const STAYS_PDP_REVIEWS_QUERY_HASH =
+  "2ed951bfedf71b87d9d30e24a419e15517af9fbed7ac560a8d1cc7feadfa22e6";
+const REVIEWS_PAGE_SIZE = 50;
+
+async function fetchReviewsPage(
+  globalListingId: string,
+  offset: number,
+  limit: number,
+  sortingPreference: string,
+  query?: string,
+  tagName?: string
+): Promise<any> {
+  const pdpReviewsRequest: Record<string, any> = {
+    fieldSelector: "for_p3_translation_only",
+    forPreview: false,
+    limit,
+    offset: String(offset),
+    showingTranslationButton: false,
+    first: limit,
+    sortingPreference,
+    checkinDate: null,
+    checkoutDate: null,
+    numberOfAdults: "1",
+    numberOfChildren: "0",
+    numberOfInfants: "0",
+    numberOfPets: "0",
+    amenityFilters: null,
+  };
+  if (query) pdpReviewsRequest.query = query;
+  if (tagName) pdpReviewsRequest.tagName = tagName;
+  const variables = { id: globalListingId, pdpReviewsRequest };
+  const extensions = {
+    persistedQuery: { version: 1, sha256Hash: STAYS_PDP_REVIEWS_QUERY_HASH },
+  };
+  const url = new URL(
+    `${BASE_URL}/api/v3/StaysPdpReviewsQuery/${STAYS_PDP_REVIEWS_QUERY_HASH}`
+  );
+  url.searchParams.set("operationName", "StaysPdpReviewsQuery");
+  url.searchParams.set("locale", "en");
+  url.searchParams.set("currency", "USD");
+  url.searchParams.set("variables", JSON.stringify(variables));
+  url.searchParams.set("extensions", JSON.stringify(extensions));
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "X-Airbnb-API-Key": AIRBNB_API_KEY,
+        "X-Airbnb-GraphQL-Platform": "web",
+        "X-Airbnb-GraphQL-Platform-Client": "minimalist-niobe",
+        "X-CSRF-Without-Token": "1",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Reviews request timeout after 30000ms");
+    }
+    throw error;
+  }
+}
+
+async function handleAirbnbListingReviews(params: any) {
+  const {
+    id,
+    query,
+    tagName,
+    limit,
+    offset = 0,
+    sortingPreference = "MOST_RECENT",
+    ignoreRobotsText = false,
+  } = params;
+
+  if (!id) {
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({ error: "Missing required parameter: id" }, null, 2)
+      }],
+      isError: true
+    };
+  }
+
+  const listingUrl = new URL(`${BASE_URL}/rooms/${id}`);
+  const path = listingUrl.pathname + listingUrl.search;
+  if (!ignoreRobotsText && !isPathAllowed(path)) {
+    log("warn", "Listing reviews blocked by robots.txt", { path, url: listingUrl.toString() });
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          error: robotsErrorMessage,
+          url: listingUrl.toString(),
+          suggestion: "Consider enabling 'ignore_robots_txt' in extension settings if needed for testing"
+        }, null, 2)
+      }],
+      isError: true
+    };
+  }
+
+  const globalListingId = Buffer.from(`StayListing:${id}`).toString("base64");
+  const startOffset = Math.max(0, parseInt(String(offset))) || 0;
+  const userLimit = limit !== undefined ? Math.max(0, parseInt(String(limit))) : undefined;
+
+  try {
+    log("info", "Fetching listing reviews", { id, offset: startOffset, limit: userLimit, sortingPreference, query, tagName });
+
+    const allReviews: any[] = [];
+    let total: number | undefined;
+    let reviewTags: any[] = [];
+    let cursor = startOffset;
+
+    while (true) {
+      const remaining = userLimit !== undefined ? userLimit - allReviews.length : Infinity;
+      if (remaining <= 0) break;
+
+      const pageSize = Math.min(REVIEWS_PAGE_SIZE, remaining);
+      const json = await fetchReviewsPage(globalListingId, cursor, pageSize, sortingPreference, query, tagName);
+      const node = json?.data?.presentation?.stayProductDetailPage?.reviews;
+      if (!node) {
+        const errors = json?.errors;
+        throw new Error(
+          `Unexpected reviews response shape${errors ? `: ${JSON.stringify(errors).slice(0, 200)}` : ""}`
+        );
+      }
+
+      if (total === undefined) {
+        total = node.metadata?.reviewsCount ?? 0;
+        reviewTags = (node.metadata?.reviewTags ?? []).map((t: any) => ({
+          name: t.name,
+          localizedName: t.localizedName,
+          count: t.count,
+        }));
+      }
+
+      const batch = node.reviews ?? [];
+      for (const r of batch) {
+        allReviews.push({
+          id: r.id,
+          createdAt: r.createdAt,
+          language: r.language,
+          reviewer: r.reviewer?.firstName,
+          comments: r.comments,
+          hostResponse: r.responder?.response ?? r.response ?? null,
+        });
+      }
+
+      if (batch.length < pageSize) break;
+      cursor += batch.length;
+      if (total !== undefined && cursor >= total) break;
+    }
+
+    log("info", "Listing reviews fetched", { id, returned: allReviews.length, total });
+
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          listingUrl: listingUrl.toString(),
+          total: total ?? allReviews.length,
+          returned: allReviews.length,
+          offset: startOffset,
+          sortingPreference,
+          query: query ?? null,
+          tagName: tagName ?? null,
+          reviewTags,
+          reviews: allReviews,
+        }, null, 2)
+      }],
+      isError: false
+    };
+  } catch (error) {
+    log("error", "Listing reviews request failed", {
+      error: error instanceof Error ? error.message : String(error),
+      id,
+    });
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+          listingUrl: listingUrl.toString(),
+          hint: "If the error mentions PersistedQueryNotFound, Airbnb has rotated the StaysPdpReviewsQuery hash. Capture the new one from a listing page and update STAYS_PDP_REVIEWS_QUERY_HASH.",
+          timestamp: new Date().toISOString(),
+        }, null, 2)
+      }],
+      isError: true
+    };
+  }
+}
+
 // Server setup
 const server = new Server(
   {
@@ -924,6 +1172,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "airbnb_listing_details": {
         result = await handleAirbnbListingDetails(request.params.arguments);
+        break;
+      }
+
+      case "airbnb_listing_reviews": {
+        result = await handleAirbnbListingReviews(request.params.arguments);
         break;
       }
 
