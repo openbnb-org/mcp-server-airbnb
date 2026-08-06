@@ -117,5 +117,36 @@
         }
       }]
     ]
+  },
+
+  "prefetchedNeighbour": {
+    "_comment": "Page contains entries for both a prefetched neighbouring listing and the requested listing.",
+    "niobeClientData": [
+      ["StaysPdpReviewsQuery", {
+        "data": {
+          "node": {
+            "id": "RGVtYW5kU3RheUxpc3Rpbmc6OTk5OTk=",
+            "pdpPresentation": {
+              "amenities": {
+                "title": "Neighbour Amenities"
+              }
+            }
+          }
+        }
+      }],
+      ["StaysPdpReviewsQuery", {
+        "data": {
+          "node": {
+            "id": "RGVtYW5kU3RheUxpc3Rpbmc6MTIzNDU=",
+            "pdpPresentation": {
+              "amenities": {
+                "title": "Requested Listing Amenities"
+              }
+            }
+          }
+        }
+      }]
+    ]
   }
 }
+

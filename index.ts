@@ -760,7 +760,7 @@ async function handleAirbnbListingDetails(params: any) {
       // absent. Counting keys would be fragile in the direction that loses data: if
       // Airbnb ever adds one placeholder key to a stub, a count-based test would decide
       // the section was populated and silently discard the recovered content.
-      const pdp = findPdpPresentation(clientData);
+      const pdp = findPdpPresentation(clientData, id);
       const recovered: string[] = [];
       if (pdp) {
         const fromPdp: Record<string, { value: any | null; contentKey: string }> = {

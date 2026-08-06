@@ -211,3 +211,26 @@ test("keyAmenityGroups passes through non-matching objects, arrays, and null unc
   const noGroups = { foo: "bar" };
   assert.deepEqual(keyAmenityGroups(noGroups), noGroups);
 });
+
+// --- listingId matching and fallback behavior ---
+
+test("findPdpPresentation selects the requested listing when a neighbour is prefetched first", () => {
+  const pdp = findPdpPresentation(fx.prefetchedNeighbour, "12345");
+  assert.equal(pdp?.amenities?.title, "Requested Listing Amenities");
+});
+
+test("findPdpPresentation returns null when requested listing id matches nothing and no id-less fallback exists", () => {
+  const pdp = findPdpPresentation(fx.prefetchedNeighbour, "88888");
+  assert.equal(pdp, null);
+});
+
+test("findPdpPresentation falls back to an id-less node when no id-bearing entry matches", () => {
+  const pdp = findPdpPresentation(fx.healthy, "12345");
+  assert.equal(pdp?.amenities?.title, "What this place offers");
+});
+
+test("findPdpPresentation preserves existing behavior when listingId is omitted", () => {
+  const pdp = findPdpPresentation(fx.prefetchedNeighbour);
+  assert.equal(pdp?.amenities?.title, "Neighbour Amenities");
+});
+
