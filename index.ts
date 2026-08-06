@@ -772,7 +772,10 @@ async function handleAirbnbListingDetails(params: any) {
           const replacement = fromPdp[section.id];
           if (replacement?.value && !section[replacement.contentKey]) {
             recovered.push(section.id);
-            return { id: section.id, ...flattenArraysInObject(keyAmenityGroups(replacement.value)) };
+            // Merge onto the section rather than replacing it. A stub can be partial —
+            // carrying a title while missing the content — and rebuilding from `id`
+            // alone would throw away whatever the section tree did manage to supply.
+            return { ...section, ...flattenArraysInObject(keyAmenityGroups(replacement.value)) };
           }
           return section;
         });

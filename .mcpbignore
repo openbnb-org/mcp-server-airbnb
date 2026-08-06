@@ -2,7 +2,7 @@
 *.ts
 
 # Test files
-test-extension.js
+test-*
 
 # Docker
 Dockerfile

@@ -178,12 +178,17 @@ export function keyAmenityGroups(section: any): any {
 export function extractHighlights(pdp: any): any | null {
   const highlights = pdp?.highlights;
   if (!Array.isArray(highlights) || highlights.length === 0) return null;
-  return {
-    highlights: highlights
-      .map((h: any) => {
-        const sub = h?.subtitle;
-        return sub ? `${h?.title}: ${sub}` : h?.title;
-      })
-      .filter(Boolean),
-  };
+  const mapped = highlights
+    .map((h: any) => {
+      const title = h?.title;
+      // Interpolating first would turn a missing title into the literal string
+      // "null: Free parking on premises", which .filter(Boolean) cannot catch.
+      if (!title) return null;
+      // Airbnb has shipped this as both a plain string and a { text } object.
+      const sub = typeof h?.subtitle === "string" ? h.subtitle : h?.subtitle?.text;
+      return sub ? `${title}: ${sub}` : title;
+    })
+    .filter(Boolean);
+
+  return mapped.length ? { highlights: mapped } : null;
 }

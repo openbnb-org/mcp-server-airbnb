@@ -243,7 +243,19 @@ npm run watch
 
 ### Testing
 
-The extension can be tested by running the MCP server directly:
+```bash
+# Build, then run both suites
+npm test
+```
+
+`npm test` drives the built server over stdio and calls the tools for real:
+
+- `test-extension.js` — MCP handshake, tool listing, a search, listing details, and the geocoding paths (Photon, Nominatim fallback)
+- `test-amenities.js` — amenity extraction across several live listings, checking that amenities Airbnb strikes through never appear as ones the listing offers
+
+Both hit `airbnb.com` and the geocoders over the network, so they need connectivity and can fail if Airbnb changes its page structure — that's the point of them, but it also means they aren't suitable as an unattended CI gate.
+
+The server can also be run directly:
 
 ```bash
 # Run with robots.txt compliance (default)
