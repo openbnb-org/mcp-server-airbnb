@@ -76,27 +76,49 @@ export function flattenArraysInObject(input: any, inArray: boolean = false): any
 }
 
 /**
- * Airbnb moved several PDP sections to client-side rendering. Their entries under
- * `presentation.stayProductDetailPage.sections.sections` still exist, still report
- * sectionContentStatus COMPLETE, but carry a `section` object containing nothing but
- * `__typename`. AMENITIES_DEFAULT and HIGHLIGHTS_DEFAULT are both in that state, so
- * the schema-driven extraction returns an empty shell rather than failing loudly.
+ * Airbnb moved several PDP sections to client-side rendering. Their section-tree
+ * entries still report sectionContentStatus COMPLETE while carrying nothing but
+ * `__typename`, so the real content is recovered from a sibling branch of the
+ * payload: `niobeClientData[i][1].data.node.pdpPresentation`.
  *
- * The content now lives on a sibling branch of the same payload:
- *   niobeClientData[i][1].data.node.pdpPresentation
+ * When `listingId` is provided, entry nodes with a base64 `id` field are checked to
+ * match the requested listing ID. Nodes without an `id` field are accepted as a
+ * fallback only when no ID-bearing entry matched, maintaining backward compatibility.
  *
- * Returns null when the branch is absent, so callers fall back to whatever the
- * section tree gave them rather than losing data if Airbnb moves it again.
+ * Returns null when no matching branch is present.
  */
-export function findPdpPresentation(clientData: any): any | null {
+export function findPdpPresentation(clientData: any, listingId?: string): any | null {
   const entries = clientData?.niobeClientData;
   if (!Array.isArray(entries)) return null;
+
+  let idLessFallback: any = null;
+
   for (const entry of entries) {
-    const pdp = entry?.[1]?.data?.node?.pdpPresentation;
-    if (pdp && typeof pdp === "object") return pdp;
+    const node = entry?.[1]?.data?.node;
+    const pdp = node?.pdpPresentation;
+    if (!pdp || typeof pdp !== "object") continue;
+
+    if (!listingId) return pdp;
+
+    const rawId = node?.id;
+    if (typeof rawId === "string" && rawId) {
+      try {
+        const decoded = atob(rawId);
+        const parts = decoded.split("DemandStayListing:");
+        const extractedId = parts.length > 1 ? parts[1] : decoded;
+        if (extractedId === String(listingId)) return pdp;
+      } catch {
+        // Ignore base64 decoding errors for non-standard IDs
+      }
+    } else if (!idLessFallback) {
+      // An ID-less node is saved as fallback, used only if no ID-bearing entry matched.
+      idLessFallback = pdp;
+    }
   }
-  return null;
+
+  return listingId ? idLessFallback : null;
 }
+
 
 /**
  * Amenity groups, preserving each item's `available` flag.
