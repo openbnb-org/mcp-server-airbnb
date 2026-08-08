@@ -246,3 +246,32 @@ test("flattenArraysInObject joins arrays of objects into a string", () => {
 test("flattenArraysInObject leaves primitives alone", () => {
   assert.deepEqual(flattenArraysInObject({ a: 1, b: "x" }), { a: 1, b: "x" });
 });
+
+test("structured priceBreakdown shape is destroyed if passed through flattenArraysInObject", () => {
+  // Documented composition rule on 0.3.0: extractPriceBreakdown MUST run before
+  // cleanObject, and the result must be attached AFTER flattenArraysInObject.
+  // flattenArraysInObject joins arrays-of-objects into a string, so the structured
+  // lineItems array does not survive a direct flatten — which is why the search path
+  // never flattens the breakdown itself.
+  const breakdown = extractPriceBreakdown(prices.discounted);
+  assert.ok(Array.isArray(breakdown.lineItems));
+  assert.equal(typeof breakdown.lineItems[0], "object");
+  const flattened = flattenArraysInObject(breakdown);
+  assert.equal(typeof flattened.lineItems, "string");
+  assert.ok(flattened.lineItems.includes("Special offer"));
+});
+
+test("attaching priceBreakdown after flatten preserves the structured shape", () => {
+  // Mirrors the airbnb_search path: flatten the card, then set priceBreakdown.
+  const card = flattenArraysInObject({
+    structuredDisplayPrice: {
+      primaryLine: { accessibilityLabel: "$1,130 for 3 nights" },
+      explanationData: { priceDetails: "3 nights x $376.55: $1,129.65" },
+    },
+  });
+  const breakdown = extractPriceBreakdown(prices.discounted);
+  const out = { ...card, priceBreakdown: breakdown };
+  assert.deepEqual(out.priceBreakdown.lineItems, breakdown.lineItems);
+  assert.equal(out.priceBreakdown.note, "$2,522.00 total before taxes");
+  assert.ok(Array.isArray(out.priceBreakdown.lineItems));
+});

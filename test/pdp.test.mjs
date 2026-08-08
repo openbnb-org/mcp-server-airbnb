@@ -8,6 +8,8 @@ import {
   findPdpPresentation,
   extractAmenities,
   extractHighlights,
+  keyAmenityGroups,
+  flattenArraysInObject,
   compactSearchResult,
 } from "../dist/util.js";
 
@@ -24,17 +26,15 @@ test("findPdpPresentation locates the branch without hardcoding an index", () =>
   assert.equal(findPdpPresentation(null), null);
 });
 
-test("extractAmenities separates available from unavailable", () => {
+test("extractAmenities keeps amenity titles under each group", () => {
+  // 0.3.0 shape: each group carries an `amenities` string list. Unavailable items are
+  // marked only when a group is mixed; Airbnb's dedicated "Not included" group already
+  // says that in its title, so its items stay unmarked.
   const out = extractAmenities(findPdpPresentation(fx.healthy));
   const heat = out.seeAllAmenitiesGroups.find((g) => g.title === "Heating and cooling");
   const not = out.seeAllAmenitiesGroups.find((g) => g.title === "Not included");
-  assert.deepEqual(heat.available, ["Central air conditioning", "Ceiling fan"]);
-  assert.ok(!("unavailable" in heat));
-  // available:false is how Airbnb renders a struck-through amenity. A listing can
-  // advertise a dryer in its description while carrying this flag; conflating the two
-  // reports the opposite of the truth.
-  assert.deepEqual(not.unavailable, ["Dryer", "Hot water"]);
-  assert.ok(!("available" in not));
+  assert.deepEqual(heat.amenities, ["Central air conditioning", "Ceiling fan"]);
+  assert.deepEqual(not.amenities, ["Dryer", "Hot water"]);
 });
 
 test("extractHighlights joins a subtitle onto its title when present", () => {
@@ -51,7 +51,7 @@ test("amenities still extract when highlights are gone", () => {
   const pdp = findPdpPresentation(fx.amenitiesOnly);
   const amenities = extractAmenities(pdp);
   assert.ok(amenities, "amenities must survive a missing highlights field");
-  assert.deepEqual(amenities.seeAllAmenitiesGroups[0].available, [
+  assert.deepEqual(amenities.seeAllAmenitiesGroups[0].amenities, [
     "AC - split type ductless system",
   ]);
   assert.equal(extractHighlights(pdp), null, "missing highlights report as null, not as an error");
@@ -63,7 +63,7 @@ test("a malformed amenity group does not destroy the healthy groups around it", 
   assert.ok(titles.includes("Bathroom"), "groups before the bad one must survive");
   assert.ok(titles.includes("Kitchen"), "groups after the bad one must survive");
   const bathroom = out.seeAllAmenitiesGroups.find((g) => g.title === "Bathroom");
-  assert.deepEqual(bathroom.available, ["Hair dryer"]);
+  assert.deepEqual(bathroom.amenities, ["Hair dryer"]);
 });
 
 test("extraction returns null rather than throwing when the branch moves", () => {
@@ -117,4 +117,25 @@ test("a result with an unusable id still returns everything else it has", () => 
   assert.equal(out.name, "A Cabin");
   assert.equal(out.layout, "4 bedrooms, 5 beds, 3 baths");
   assert.ok(!("id" in out));
+});
+
+// --- 0.3.0 keyAmenityGroups + flatten composition ---
+
+test("keyAmenityGroups keys amenity groups by title so flatten keeps categories", () => {
+  const section = {
+    title: "What this place offers",
+    seeAllAmenitiesGroups: [
+      { title: "Bathroom", amenities: ["Hair dryer", "Shampoo"] },
+      { title: "Kitchen", amenities: ["Oven"] },
+    ],
+  };
+  const keyed = keyAmenityGroups(section);
+  assert.deepEqual(keyed.seeAllAmenitiesGroups, {
+    Bathroom: ["Hair dryer", "Shampoo"],
+    Kitchen: ["Oven"],
+  });
+  const flat = flattenArraysInObject(keyed);
+  // Top-level keys survive flatten; each category becomes its own joined string.
+  assert.equal(flat.seeAllAmenitiesGroups.Bathroom, "Hair dryer, Shampoo");
+  assert.equal(flat.seeAllAmenitiesGroups.Kitchen, "Oven");
 });

@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, compactSearchResult, decodeListingId, extractPriceBreakdown } from "./util.js";
+import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, keyAmenityGroups, compactSearchResult, decodeListingId, extractPriceBreakdown } from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -769,7 +769,7 @@ async function handleAirbnbListingDetails(params: any) {
         .map((section: any) => {
           return {
             id: section.sectionId,
-            ...flattenArraysInObject(pickBySchema(section.section, allowSectionSchema[section.sectionId]))
+            ...flattenArraysInObject(keyAmenityGroups(pickBySchema(section.section, allowSectionSchema[section.sectionId])))
           }
         });
 
@@ -791,7 +791,10 @@ async function handleAirbnbListingDetails(params: any) {
           const replacement = fromPdp[section.id];
           if (replacement?.value && !section[replacement.contentKey]) {
             recovered.push(section.id);
-            return { id: section.id, ...replacement.value };
+            // Merge onto the section rather than replacing it. A stub can be partial —
+            // carrying a title while missing the content — and rebuilding from `id`
+            // alone would throw away whatever the section tree did manage to supply.
+            return { ...section, ...flattenArraysInObject(keyAmenityGroups(replacement.value)) };
           }
           return section;
         });
@@ -800,7 +803,7 @@ async function handleAirbnbListingDetails(params: any) {
         for (const [sectionId, replacement] of Object.entries(fromPdp)) {
           if (replacement.value && !extracted.some((s: any) => s.id === sectionId)) {
             recovered.push(sectionId);
-            extracted.push({ id: sectionId, ...replacement.value });
+            extracted.push({ id: sectionId, ...flattenArraysInObject(keyAmenityGroups(replacement.value)) });
           }
         }
       }

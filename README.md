@@ -159,7 +159,17 @@ Get detailed information about a specific Airbnb listing.
 **Returns:**
 - Detailed property information including:
   - Location details with coordinates
-  - Amenities and facilities
+  - Amenities and facilities, as `seeAllAmenitiesGroups` — an object keyed by amenity category, so a category can be addressed directly. Amenities Airbnb shows struck through arrive under its own `"Not included"` category:
+
+    ```json
+    {
+      "seeAllAmenitiesGroups": {
+        "Bathroom": "Hair dryer",
+        "Heating and cooling": "AC - split type ductless system, Heating",
+        "Not included": "Dryer, Hot water"
+      }
+    }
+    ```
   - House rules and policies
   - Property highlights and descriptions
   - Direct link to the listing
@@ -233,7 +243,19 @@ npm run watch
 
 ### Testing
 
-The extension can be tested by running the MCP server directly:
+```bash
+# Build, then run both suites
+npm test
+```
+
+`npm test` drives the built server over stdio and calls the tools for real:
+
+- `test-extension.js` — MCP handshake, tool listing, a search, listing details, and the geocoding paths (Photon, Nominatim fallback)
+- `test-amenities.js` — amenity extraction across several live listings, checking that amenities Airbnb strikes through never appear as ones the listing offers
+
+Both hit `airbnb.com` and the geocoders over the network, so they need connectivity and can fail if Airbnb changes its page structure — that's the point of them, but it also means they aren't suitable as an unattended CI gate.
+
+The server can also be run directly:
 
 ```bash
 # Run with robots.txt compliance (default)
