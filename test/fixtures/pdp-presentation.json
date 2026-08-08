@@ -117,5 +117,366 @@
         }
       }]
     ]
+  },
+
+  "photoTour": {
+    "_comment": "Trimmed from the real payload for listing 1576852203737322823 (fetched 2026-07-28). This is the real-world discriminator: Bedroom 5 is missing the Clothing storage / Hangers / Essentials / Room-darkening shades amenities that Bedrooms 1-4 all carry, while the separate Game room stop lists Bed linens. An earlier photo-reuse hypothesis was disproved (zero image-id overlap between Bedroom 5 and Game room) - the signal lives in the per-room amenity lists and stop names, not the photos.",
+    "niobeClientData": [
+      [null, {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "mediaTour": {
+                "__typename": "MediaTour",
+                "name": "Photo tour",
+                "stops": [
+                  {
+                    "__typename": "MediaTourStop",
+                    "id": "1576852203737322823-space-757596962",
+                    "name": "Living room",
+                    "items": [
+                      { "image": { "caption": null, "imageId": "1" } },
+                      { "image": { "caption": null, "imageId": "2" } }
+                    ],
+                    "description": {
+                      "descriptions": [
+                        { "text": "Books and reading material" },
+                        { "text": "Air conditioning" },
+                        { "text": "Heating" },
+                        { "text": "Indoor fireplace" },
+                        { "text": "Sound system" },
+                        { "text": "TV" }
+                      ]
+                    }
+                  },
+                  {
+                    "__typename": "MediaTourStop",
+                    "id": "1576852203737322823-space-757489378",
+                    "name": "Bedroom 1",
+                    "items": [
+                      {
+                        "image": {
+                          "caption": {
+                            "__typename": "MediaText",
+                            "user": {
+                              "localizedStringWithTranslationPreference": "Master bedroom with king bed and attached master bathroom on main level",
+                              "localizedString": "Master bedroom with king bed and attached master bathroom on main level"
+                            }
+                          },
+                          "imageId": "2442336944"
+                        }
+                      },
+                      { "image": { "caption": null, "imageId": "2442337239" } }
+                    ],
+                    "description": {
+                      "descriptions": [
+                        { "text": "King bed" },
+                        { "text": "Bed linens" },
+                        { "text": "Clothing storage" },
+                        { "text": "Essentials" },
+                        { "text": "Extra pillows and blankets" },
+                        { "text": "Hangers" },
+                        { "text": "Heating" },
+                        { "text": "Room-darkening shades" }
+                      ]
+                    }
+                  },
+                  {
+                    "__typename": "MediaTourStop",
+                    "id": "1576852203737322823-space-757489379",
+                    "name": "Bedroom 2",
+                    "items": [
+                      { "image": { "caption": { "user": { "localizedStringWithTranslationPreference": "King bedroom on main level" } }, "imageId": "2442337446" } },
+                      { "image": { "caption": null, "imageId": "2442337447" } }
+                    ],
+                    "description": {
+                      "descriptions": [
+                        { "text": "King bed" },
+                        { "text": "Air conditioning" },
+                        { "text": "Bed linens" },
+                        { "text": "Clothing storage" },
+                        { "text": "Essentials" },
+                        { "text": "Extra pillows and blankets" },
+                        { "text": "Hangers" },
+                        { "text": "Heating" },
+                        { "text": "Room-darkening shades" }
+                      ]
+                    }
+                  },
+                  {
+                    "__typename": "MediaTourStop",
+                    "id": "1576852203737322823-space-757489380",
+                    "name": "Bedroom 3",
+                    "items": [
+                      { "image": { "caption": { "user": { "localizedStringWithTranslationPreference": "King bedroom on main level" } }, "imageId": "2442337500" } }
+                    ],
+                    "description": {
+                      "descriptions": [
+                        { "text": "King bed" },
+                        { "text": "Air conditioning" },
+                        { "text": "Bed linens" },
+                        { "text": "Clothing storage" },
+                        { "text": "Essentials" },
+                        { "text": "Extra pillows and blankets" },
+                        { "text": "Hangers" },
+                        { "text": "Heating" },
+                        { "text": "Room-darkening shades" }
+                      ]
+                    }
+                  },
+                  {
+                    "__typename": "MediaTourStop",
+                    "id": "1576852203737322823-space-757489381",
+                    "name": "Bedroom 4",
+                    "items": [
+                      { "image": { "caption": { "user": { "localizedStringWithTranslationPreference": "Queen bedroom downstairs with third bathroom on same level" } }, "imageId": "2442337600" } }
+                    ],
+                    "description": {
+                      "descriptions": [
+                        { "text": "Queen bed" },
+                        { "text": "Air conditioning" },
+                        { "text": "Bed linens" },
+                        { "text": "Clothing storage" },
+                        { "text": "Essentials" },
+                        { "text": "Extra pillows and blankets" },
+                        { "text": "Hangers" },
+                        { "text": "Heating" },
+                        { "text": "Room-darkening shades" }
+                      ]
+                    }
+                  },
+                  {
+                    "__typename": "MediaTourStop",
+                    "id": "1576852203737322823-space-771388337",
+                    "name": "Bedroom 5",
+                    "items": [
+                      { "image": { "caption": null, "imageId": "9001" } },
+                      { "image": { "caption": null, "imageId": "9002" } },
+                      { "image": { "caption": null, "imageId": "9003" } }
+                    ],
+                    "description": {
+                      "descriptions": [
+                        { "text": "2 single beds" },
+                        { "text": "Air conditioning" },
+                        { "text": "Bed linens" },
+                        { "text": "Extra pillows and blankets" },
+                        { "text": "Heating" },
+                        { "text": "TV" }
+                      ]
+                    }
+                  },
+                  {
+                    "__typename": "MediaTourStop",
+                    "id": "1576852203737322823-space-771375265",
+                    "name": "Game room",
+                    "items": [
+                      { "image": { "caption": null, "imageId": "9101" } },
+                      { "image": { "caption": null, "imageId": "9102" } },
+                      { "image": { "caption": null, "imageId": "9103" } }
+                    ],
+                    "description": {
+                      "descriptions": [
+                        { "text": "Air conditioning" },
+                        { "text": "Bed linens" },
+                        { "text": "Board games" },
+                        { "text": "Books and reading material" },
+                        { "text": "Children's books and toys" },
+                        { "text": "Children's playroom" },
+                        { "text": "TV" },
+                        { "text": "Wifi" }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "bathroomsTour": {
+                "__typename": "MediaTour",
+                "name": "What's the bathroom like",
+                "stops": []
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "photoTourCaptionEdgeCases": {
+    "_comment": "One item has a null caption, one has a caption made only of whitespace, one repeats an already-seen caption verbatim, and one falls back to localizedString because localizedStringWithTranslationPreference is absent.",
+    "niobeClientData": [
+      [null, {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "mediaTour": {
+                "name": "Photo tour",
+                "stops": [
+                  {
+                    "name": "Kitchen",
+                    "items": [
+                      { "image": { "caption": null, "imageId": "1" } },
+                      { "image": { "caption": { "user": { "localizedStringWithTranslationPreference": "Full kitchen" } }, "imageId": "2" } },
+                      { "image": { "caption": { "user": { "localizedStringWithTranslationPreference": "   " } }, "imageId": "3" } },
+                      { "image": { "caption": { "user": { "localizedStringWithTranslationPreference": "Full kitchen" } }, "imageId": "4" } },
+                      { "image": { "caption": { "user": { "localizedString": "Fallback caption text" } }, "imageId": "5" } }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "photoTourDescriptionMissing": {
+    "_comment": "A stop with no description at all - it must still return with name and captions.",
+    "niobeClientData": [
+      [null, {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "mediaTour": {
+                "name": "Photo tour",
+                "stops": [
+                  {
+                    "name": "Exterior",
+                    "items": [
+                      { "image": { "caption": { "user": { "localizedStringWithTranslationPreference": "Backyard with hot tub" } }, "imageId": "1" } }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "photoTourKeyAbsent": {
+    "_comment": "sleepingArrangements and bathroomsTour are absent entirely; only mediaTour is present. Recovery must omit the absent keys, never throw.",
+    "niobeClientData": [
+      [null, {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "mediaTour": {
+                "name": "Photo tour",
+                "stops": [
+                  { "name": "Library", "items": [{ "image": { "caption": null, "imageId": "1" } }] }
+                ]
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "photoTourStopsEmpty": {
+    "_comment": "bathroomsTour is present (as it really is on this listing) but its stops array is empty.",
+    "niobeClientData": [
+      [null, {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "bathroomsTour": { "name": "What's the bathroom like", "stops": [] }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "photoTourStopsMissing": {
+    "_comment": "mediaTour is present but the stops key itself is missing (not just empty).",
+    "niobeClientData": [
+      [null, {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "mediaTour": { "name": "Photo tour" }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "otherTours": {
+    "niobeClientData": [
+      [null, {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "sleepingArrangements": {
+                "name": "Where you'll sleep",
+                "stops": [
+                  {
+                    "name": "Bedroom 1",
+                    "items": [
+                      { "image": { "caption": { "user": { "localizedStringWithTranslationPreference": "King bed" } }, "imageId": "1" } }
+                    ],
+                    "description": {
+                      "descriptions": [
+                        { "text": "King bed" }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "bathroomsTour": {
+                "name": "What's the bathroom like",
+                "stops": [
+                  {
+                    "name": "Bathroom 1",
+                    "items": [
+                      { "image": { "caption": { "user": { "localizedStringWithTranslationPreference": "Shower" } }, "imageId": "2" } }
+                    ],
+                    "description": {
+                      "descriptions": [
+                        { "text": "Hot water" },
+                        { "text": "Shampoo" }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "photoTourNameMissing": {
+    "_comment": "A stop with no name - asserts name key omitted, captions kept.",
+    "niobeClientData": [
+      [null, {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "mediaTour": {
+                "name": "Photo tour",
+                "stops": [
+                  {
+                    "items": [
+                      { "image": { "caption": { "user": { "localizedStringWithTranslationPreference": "A nice room" } }, "imageId": "1" } }
+                    ],
+                    "description": {
+                      "descriptions": [
+                        { "text": "Some amenity" }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }]
+    ]
   }
 }
