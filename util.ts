@@ -175,6 +175,76 @@ export function keyAmenityGroups(section: any): any {
   return { ...section, seeAllAmenitiesGroups: keyed };
 }
 
+/**
+ * `mediaTour`, `sleepingArrangements`, and `bathroomsTour` are three sibling keys
+ * under `pdpPresentation` that all share the same `MediaTour` shape - a photo tour
+ * with one stop per room/space:
+ *
+ *   MediaTour     = { name, stops: [MediaTourStop] }
+ *   MediaTourStop = { name, items: [{ image: { caption, imageId, uri, ... } }], description }
+ *
+ * The primary use case is a capacity check: a listing can claim N bedrooms while
+ * one "bedroom" stop is really a den, distinguishable only by which amenities its
+ * description lists relative to its peers (e.g. missing "Clothing storage" /
+ * "Hangers" / "Essentials" / "Room-darkening shades"). So the per-room amenity list
+ * is the primary payload here, not the images.
+ *
+ * Raw image data (uri, imageId, assetMetadata, tags) is deliberately never
+ * emitted - a photo tour holds dozens of images, and dumping their internals would
+ * undo this fork's whole reason for existing (staying far below stock token cost).
+ * Only stop name, deduped non-empty host captions, and the per-room amenity texts
+ * are surfaced.
+ *
+ * Partial-output tolerant throughout: any of `stops`, `items`, `caption`, or
+ * `description` may be missing, null, or malformed. A malformed individual stop or
+ * item is skipped rather than aborting the whole tour. Returns null - never throws,
+ * never emits an empty shell - when there is nothing worth reporting.
+ */
+export function extractMediaTour(tour: any): any | null {
+  if (!tour || typeof tour !== "object") return null;
+  const rawStops = Array.isArray(tour.stops) ? tour.stops : [];
+
+  const stops = rawStops
+    .map((stop: any) => {
+      if (!stop || typeof stop !== "object") return null;
+
+      const out: Record<string, any> = {};
+      if (typeof stop.name === "string" && stop.name.trim()) out.name = stop.name;
+
+      const items = Array.isArray(stop.items) ? stop.items : [];
+      const seen = new Set<string>();
+      const captions: string[] = [];
+      for (const item of items) {
+        const user = item?.image?.caption?.user;
+        const text = user?.localizedStringWithTranslationPreference ?? user?.localizedString;
+        if (typeof text !== "string") continue;
+        const trimmed = text.trim();
+        if (!trimmed || seen.has(trimmed)) continue;
+        seen.add(trimmed);
+        captions.push(trimmed);
+      }
+      if (captions.length) out.captions = captions;
+
+      const descriptions = stop.description?.descriptions;
+      if (Array.isArray(descriptions)) {
+        const amenities = descriptions
+          .map((d: any) => d?.text)
+          .filter((t: any) => typeof t === "string" && t.trim());
+        if (amenities.length) out.amenities = amenities;
+      }
+
+      return Object.keys(out).length ? out : null;
+    })
+    .filter((s: any): s is Record<string, any> => s !== null);
+
+  if (stops.length === 0) return null;
+
+  const out: Record<string, any> = { stops };
+  if (typeof tour.name === "string" && tour.name.trim()) out.sectionTitle = tour.name;
+  // Put sectionTitle first for readability - rebuild in the preferred key order.
+  return "sectionTitle" in out ? { sectionTitle: out.sectionTitle, stops: out.stops } : out;
+}
+
 export function extractHighlights(pdp: any): any | null {
   const highlights = pdp?.highlights;
   if (!Array.isArray(highlights) || highlights.length === 0) return null;
