@@ -1,3 +1,143 @@
+/**
+ * Decode a `demandStayListing.id` — base64 of `"DemandStayListing:<numeric id>"`.
+ *
+ * The decode cannot be trusted on its own. `Buffer.from(x, "base64")` does not throw on
+ * invalid input; it silently skips characters outside the alphabet and decodes whatever
+ * remains. So `"Q29ycnVwdDox-MjM0NQ=="` — malformed, because of the hyphen — still decodes
+ * cleanly to `"Corrupt:12345"`, and a naive `split(":")[1]` hands back the plausible-looking
+ * id `12345` for a listing that does not exist. A try/catch cannot help, because nothing
+ * throws.
+ *
+ * The guard is therefore on the decoded VALUE, not on the encoding: it must be exactly the
+ * entity we expect. Returns undefined otherwise, so the caller omits the id rather than
+ * publishing a fabricated one — and, per partial-output, keeps every other field.
+ */
+export function decodeListingId(encoded: unknown): string | undefined {
+  if (typeof encoded !== "string" || encoded.length === 0) return undefined;
+  let decoded: string;
+  try {
+    decoded = Buffer.from(encoded, "base64").toString("utf8");
+  } catch {
+    return undefined;
+  }
+  const match = /^DemandStayListing:(\d+)$/.exec(decoded);
+  return match ? match[1] : undefined;
+}
+
+/**
+ * Pull the price breakdown out of a search result while it still has structure.
+ *
+ * `explanationData.priceDetails` is an array of line GROUPS, each holding typed
+ * items — `DefaultExplanationLineItem` for the nightly subtotal,
+ * `DiscountedExplanationLineItem` for a reduction, `HighlightExplanationLineItem`
+ * for the post-discount summary. `flattenArraysInObject` joins the whole tree into
+ * one string, which loses the grouping, the types, and the sign of a discount:
+ *
+ *   "3 nights x $890.67: $2,672.00, Special offer: -$52.50, ..."
+ *
+ * It also drops `accessibilityLabel`, which is the only place Airbnb states whether
+ * a total excludes tax ("$2,522.00 total before taxes"). That label appears only on
+ * highlight items, so it is present only when a listing has an active discount —
+ * surfaced opportunistically here rather than promised, because it genuinely is not
+ * available for every listing.
+ *
+ * MUST be called before `cleanObject`, which strips the `__typename` this reads.
+ * Returns null when there is nothing structured to report.
+ */
+export function extractPriceBreakdown(raw: any): any | null {
+  const groups = raw?.structuredDisplayPrice?.explanationData?.priceDetails;
+  if (!Array.isArray(groups) || groups.length === 0) return null;
+
+  const TYPES: Record<string, string> = {
+    DiscountedExplanationLineItem: "discount",
+    HighlightExplanationLineItem: "total",
+  };
+
+  const lineItems: any[] = [];
+  let note: string | undefined;
+
+  for (const group of groups) {
+    const items = Array.isArray(group?.items) ? group.items : [];
+    for (const item of items) {
+      if (!item?.description && !item?.priceString) continue;
+      const type = TYPES[item?.__typename];
+      lineItems.push({
+        description: item.description,
+        price: item.priceString,
+        ...(type ? { type } : {}),
+      });
+      // e.g. "$2,522.00 total before taxes"
+      if (typeof item.accessibilityLabel === "string" && /before taxes/i.test(item.accessibilityLabel)) {
+        note = item.accessibilityLabel;
+      }
+    }
+  }
+
+  if (lineItems.length === 0) return null;
+  return { lineItems, ...(note ? { note } : {}) };
+}
+
+/**
+ * Flatten one Airbnb search result into a shallow object.
+ *
+ * The payload Airbnb ships is shaped for a React tree, not for a reader. A single
+ * result spends most of its bytes on structure rather than information:
+ *
+ *   - `demandStayListing.id` is base64 of "DemandStayListing:<id>", so it restates
+ *     the id we already extract
+ *   - the listing name arrives at
+ *     `demandStayListing.description.name.localizedStringWithTranslationPreference`,
+ *     which costs more in key names than the name itself
+ *   - `explanationData.title` is the constant string "Price details", repeated once
+ *     per result
+ *   - `mapSecondaryLine` and `secondaryLine` are usually empty strings
+ *
+ * None of that survives contact with a consumer, and for an MCP server the consumer
+ * is a context window. Returns only keys that have a value, so absent fields cost
+ * nothing rather than serializing as null.
+ */
+export function compactSearchResult(raw: any, baseUrl: string, priceBreakdown?: any): any {
+  if (!raw || typeof raw !== "object") return raw;
+
+  const listing = raw.demandStayListing ?? {};
+  const id = decodeListingId(listing.id);
+
+  const coordinate = listing.location?.coordinate ?? {};
+  const price = raw.structuredDisplayPrice ?? {};
+
+  // priceDetails arrives with a trailing ", " from the array flattening upstream.
+  const priceDetails =
+    typeof price.explanationData?.priceDetails === "string"
+      ? price.explanationData.priceDetails.replace(/,\s*$/, "")
+      : undefined;
+
+  const out: Record<string, any> = {
+    id,
+    url: id ? `${baseUrl}/rooms/${id}` : undefined,
+    name: listing.description?.name?.localizedStringWithTranslationPreference,
+    layout: raw.structuredContent?.primaryLine,
+    badges: raw.badges,
+    rating: raw.avgRatingA11yLabel,
+    price: price.primaryLine?.accessibilityLabel,
+    priceDetails,
+    latitude: coordinate.latitude,
+    longitude: coordinate.longitude,
+  };
+
+  for (const key of Object.keys(out)) {
+    const v = out[key];
+    if (v === undefined || v === null || v === "") delete out[key];
+  }
+
+  // The structured breakdown supersedes the flattened priceDetails string when
+  // one is available, so compact mode gains fidelity rather than trading it away.
+  if (priceBreakdown) {
+    delete out.priceDetails;
+    out.priceBreakdown = priceBreakdown;
+  }
+  return out;
+}
+
 export function cleanObject(obj: any) {
   Object.keys(obj).forEach(key => {
     if (obj[key] == null || key === "__typename") {

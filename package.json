@@ -27,7 +27,7 @@
     "prepare": "npm run build",
     "version": "node sync-version.js && git add manifest.json",
     "pretest": "npm run build",
-    "test": "node test-extension.js && node test-amenities.js",
+    "test": "node --test test/**/*.test.mjs",
     "watch": "tsc --watch",
     "sync-version": "node sync-version.js"
   },

@@ -1,0 +1,70 @@
+{
+  "_comment": "Raw search results BEFORE cleanObject, so __typename is still present. Captured from live searches across Welches OR, Rhododendron OR, Leavenworth WA, Chelan WA and New York NY.",
+
+  "discounted": {
+    "_comment": "A listing with an active discount. Two line groups, and the highlight item carries the only statement Airbnb makes about tax.",
+    "structuredDisplayPrice": {
+      "explanationData": {
+        "title": "Price details",
+        "subtitle": null,
+        "priceDetails": [
+          {
+            "__typename": "DisplayPriceExplanationLineGroup",
+            "renderBorderTop": false,
+            "items": [
+              {
+                "__typename": "DefaultExplanationLineItem",
+                "description": "3 nights x $890.67",
+                "priceString": "$2,672.00"
+              },
+              {
+                "__typename": "DiscountedExplanationLineItem",
+                "description": "Special offer",
+                "priceString": "-$52.50"
+              }
+            ]
+          },
+          {
+            "__typename": "DisplayPriceExplanationLineGroup",
+            "renderBorderTop": true,
+            "items": [
+              {
+                "__typename": "HighlightExplanationLineItem",
+                "description": "Price after discount",
+                "priceString": "$2,522.00",
+                "accessibilityLabel": "$2,522.00 total before taxes"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+
+  "plain": {
+    "_comment": "The common case: no discount, one group, one item, and no accessibilityLabel field at all.",
+    "structuredDisplayPrice": {
+      "explanationData": {
+        "title": "Price details",
+        "priceDetails": [
+          {
+            "__typename": "DisplayPriceExplanationLineGroup",
+            "items": [
+              {
+                "__typename": "DefaultExplanationLineItem",
+                "description": "3 nights x $1,083.83",
+                "priceString": "$3,251.49",
+                "explanationData": null
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+
+  "empty": {
+    "_comment": "No price explanation at all.",
+    "structuredDisplayPrice": {}
+  }
+}
