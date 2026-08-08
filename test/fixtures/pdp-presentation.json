@@ -7,6 +7,9 @@
       ["StaysPdpReviewsQuery", {
         "data": {
           "node": {
+            "location": {
+              "coordinate": { "latitude": 45.3535, "longitude": -121.9452 }
+            },
             "pdpPresentation": {
               "amenities": {
                 "title": "What this place offers",
@@ -88,6 +91,18 @@
   "noPdpBranch": {
     "_comment": "Airbnb moved the branch again. Extraction must return null, not throw.",
     "niobeClientData": [["StaysPdpSectionsQuery", { "data": { "presentation": {} } }]]
+  },
+
+  "locationStubbed": {
+    "_comment": "node.location is present but carries no coordinate - the same client-side-rendering stub that hits amenities/highlights.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", { "data": { "node": { "location": {} } } }]
+    ]
+  },
+
+  "noLocationBranch": {
+    "_comment": "Airbnb moved the location branch entirely. Recovery must return null, not throw.",
+    "niobeClientData": [["StaysPdpSectionsQuery", { "data": { "node": {} } }]]
   },
 
   "subtitleShapes": {

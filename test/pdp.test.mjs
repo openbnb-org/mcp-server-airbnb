@@ -9,6 +9,9 @@ import {
   extractAmenities,
   extractHighlights,
   keyAmenityGroups,
+  findNodeLocation,
+  extractLocationCoordinate,
+  recoverLocationSection,
 } from "../dist/util.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -210,4 +213,71 @@ test("keyAmenityGroups passes through non-matching objects, arrays, and null unc
 
   const noGroups = { foo: "bar" };
   assert.deepEqual(keyAmenityGroups(noGroups), noGroups);
+});
+
+// --- LOCATION_DEFAULT recovery: same silent-failure mode PR #42 fixed for
+// amenities/highlights, but LOCATION_DEFAULT recovers from node.location, a
+// sibling of node.pdpPresentation, rather than from pdpPresentation itself. ---
+
+test("findNodeLocation locates node.location without hardcoding an index", () => {
+  assert.ok(findNodeLocation(fx.healthy));
+  assert.equal(findNodeLocation(fx.noLocationBranch), null);
+  assert.equal(findNodeLocation({}), null);
+  assert.equal(findNodeLocation(null), null);
+});
+
+test("extractLocationCoordinate reads a real lat/lng off the node", () => {
+  const out = extractLocationCoordinate(findNodeLocation(fx.healthy));
+  assert.deepEqual(out, { lat: 45.3535, lng: -121.9452 });
+});
+
+test("extractLocationCoordinate returns null rather than a fabricated pair when stubbed", () => {
+  assert.equal(extractLocationCoordinate(findNodeLocation(fx.locationStubbed)), null);
+  assert.equal(extractLocationCoordinate(findNodeLocation(fx.noLocationBranch)), null);
+  assert.equal(extractLocationCoordinate(null), null);
+  assert.equal(extractLocationCoordinate({}), null);
+});
+
+test("extractLocationCoordinate rejects a half-formed pair (only one of lat/lng present)", () => {
+  assert.equal(extractLocationCoordinate({ coordinate: { latitude: 45.3535 } }), null);
+  assert.equal(extractLocationCoordinate({ coordinate: { longitude: -121.9452 } }), null);
+});
+
+test("recoverLocationSection passes a section with valid lat/lng through untouched", () => {
+  const sections = [{ id: "LOCATION_DEFAULT", lat: 1, lng: 2, title: "Where you'll be" }];
+  const out = recoverLocationSection(sections, { lat: 45.3535, lng: -121.9452 });
+  assert.deepEqual(out, sections);
+  assert.notEqual(out[0].lat, 45.3535, "present-and-valid values must win over recovery");
+});
+
+test("recoverLocationSection fills in a stubbed LOCATION_DEFAULT section from the recovered coordinate", () => {
+  const sections = [{ id: "LOCATION_DEFAULT" }];
+  const out = recoverLocationSection(sections, { lat: 45.3535, lng: -121.9452 });
+  assert.equal(out.length, 1);
+  assert.deepEqual(out[0], { id: "LOCATION_DEFAULT", lat: 45.3535, lng: -121.9452 });
+});
+
+test("recoverLocationSection adds LOCATION_DEFAULT when the section is absent entirely", () => {
+  const sections = [{ id: "AMENITIES_DEFAULT" }];
+  const out = recoverLocationSection(sections, { lat: 45.3535, lng: -121.9452 });
+  assert.equal(out.length, 2);
+  const loc = out.find((s) => s.id === "LOCATION_DEFAULT");
+  assert.deepEqual(loc, { id: "LOCATION_DEFAULT", lat: 45.3535, lng: -121.9452 });
+});
+
+test("recoverLocationSection changes nothing when neither source has coordinates", () => {
+  const sections = [{ id: "LOCATION_DEFAULT" }];
+  const out = recoverLocationSection(sections, null);
+  assert.deepEqual(out, sections);
+  assert.ok(!("lat" in out[0]), "must omit lat rather than fabricate one");
+  assert.ok(!("lng" in out[0]), "must omit lng rather than fabricate one");
+});
+
+test("rejects NaN and Infinity coordinates and recovers a NaN-carrying stub", () => {
+  assert.equal(extractLocationCoordinate({ coordinate: { latitude: NaN, longitude: -121.9452 } }), null);
+  assert.equal(extractLocationCoordinate({ coordinate: { latitude: 45.3535, longitude: Infinity } }), null);
+
+  const sections = [{ id: "LOCATION_DEFAULT", lat: NaN, lng: -121.9452 }];
+  const out = recoverLocationSection(sections, { lat: 45.3535, lng: -121.9452 });
+  assert.deepEqual(out, [{ id: "LOCATION_DEFAULT", lat: 45.3535, lng: -121.9452 }]);
 });

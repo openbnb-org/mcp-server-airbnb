@@ -99,6 +99,67 @@ export function findPdpPresentation(clientData: any): any | null {
 }
 
 /**
+ * Airbnb also stubs LOCATION_DEFAULT under the same client-side-rendering move that
+ * hits AMENITIES_DEFAULT and HIGHLIGHTS_DEFAULT — sectionContentStatus COMPLETE, but
+ * the section carries no coordinates. Unlike those two, LOCATION_DEFAULT's recovery
+ * source is not `pdpPresentation` — it's a sibling branch of the same node:
+ *
+ *   niobeClientData[i][1].data.node.location
+ *
+ * Mirrors findPdpPresentation exactly (same loop, same "don't hardcode the index"
+ * reasoning), just pointed at a different field of the same node.
+ */
+export function findNodeLocation(clientData: any): any | null {
+  const entries = clientData?.niobeClientData;
+  if (!Array.isArray(entries)) return null;
+  for (const entry of entries) {
+    const location = entry?.[1]?.data?.node?.location;
+    if (location && typeof location === "object") return location;
+  }
+  return null;
+}
+
+/**
+ * Pull {lat, lng} off a `location` node. Both coordinates must be present and
+ * numeric — a lone lat or lng is not a usable location, and emitting a half-formed
+ * pair would let a caller mistake it for a real one. Returns null rather than
+ * fabricating a value when the branch is stubbed, empty, or absent.
+ */
+export function extractLocationCoordinate(location: any): { lat: number; lng: number } | null {
+  const lat = location?.coordinate?.latitude;
+  const lng = location?.coordinate?.longitude;
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+/**
+ * Apply the recovered coordinate to LOCATION_DEFAULT, following the same
+ * replace-the-stub / add-if-absent shape as the fromPdp recovery in
+ * handleAirbnbListingDetails. A section that already carries valid lat/lng passes
+ * through untouched — present-and-valid values always win over recovery. When
+ * `coordinate` is null (recovery found nothing either), the sections are returned
+ * unchanged rather than stripped or fabricated.
+ */
+export function recoverLocationSection(sections: any[], coordinate: { lat: number; lng: number } | null): any[] {
+  if (!coordinate) return sections;
+
+  const hasCoords = (section: any) =>
+    Number.isFinite(section?.lat) && Number.isFinite(section?.lng);
+
+  let found = false;
+  const result = sections.map((section: any) => {
+    if (section?.id !== "LOCATION_DEFAULT") return section;
+    found = true;
+    if (hasCoords(section)) return section;
+    return { id: section.id, ...coordinate };
+  });
+
+  if (!found) {
+    result.push({ id: "LOCATION_DEFAULT", ...coordinate });
+  }
+  return result;
+}
+
+/**
  * Amenity groups, preserving each item's `available` flag.
  *
  * The flag is the whole point: Airbnb renders unavailable amenities struck through,

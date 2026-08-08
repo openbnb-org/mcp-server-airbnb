@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, keyAmenityGroups } from "./util.js";
+import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, keyAmenityGroups, findNodeLocation, extractLocationCoordinate, recoverLocationSection } from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -787,6 +787,19 @@ async function handleAirbnbListingDetails(params: any) {
             extracted.push({ id: sectionId, ...flattenArraysInObject(keyAmenityGroups(replacement.value)) });
           }
         }
+      }
+
+      // LOCATION_DEFAULT gets the same fromPdp-style recovery, but its source is a
+      // sibling branch of the node (node.location) rather than node.pdpPresentation,
+      // so Airbnb can stub it independently of the amenities/highlights move. Without
+      // this, a stubbed section silently reports success with no coordinates - the
+      // exact failure mode that killed mcp.openbnb.ai.
+      const locationCoordinate = extractLocationCoordinate(findNodeLocation(clientData));
+      if (locationCoordinate) {
+        const before = extracted.find((s: any) => s.id === "LOCATION_DEFAULT");
+        const alreadyHadCoords = before && Number.isFinite(before.lat) && Number.isFinite(before.lng);
+        extracted = recoverLocationSection(extracted, locationCoordinate);
+        if (!alreadyHadCoords) recovered.push("LOCATION_DEFAULT");
       }
 
       details = extracted;
