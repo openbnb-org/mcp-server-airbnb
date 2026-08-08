@@ -32,7 +32,15 @@
               "highlights": [
                 { "title": "Dive right in", "subtitle": "This is one of the few places in the area with a pool." },
                 { "title": "Peace and quiet" }
-              ]
+              ],
+              "hostInfo": {
+                "passportData": {
+                  "name": "Nikolai",
+                  "titleText": "Superhost",
+                  "isSuperhost": true,
+                  "isVerified": true
+                }
+              }
             }
           }
         }
@@ -117,5 +125,109 @@
         }
       }]
     ]
+  },
+
+  "hostSuperhost": {
+    "_comment": "passportData.isSuperhost true — the live Superhost signal (MEET_YOUR_HOST is a stub).",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "hostInfo": {
+                "passportData": {
+                  "name": "Lilia",
+                  "titleText": "Superhost",
+                  "isSuperhost": true
+                }
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "hostNotSuperhost": {
+    "_comment": "passportData present with isSuperhost false.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "hostInfo": {
+                "passportData": {
+                  "name": "Alex",
+                  "titleText": "Host",
+                  "isSuperhost": false
+                }
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "hostMissing": {
+    "_comment": "pdp present but no hostInfo — extractHostInfo must return null.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "highlights": [{ "title": "Quiet" }]
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "hostWithStats": {
+    "_comment": "passportData with stats (Reviews/Rating) — projected when Airbnb provides them.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "hostInfo": {
+                "passportData": {
+                  "name": "Lilia",
+                  "titleText": "Superhost",
+                  "isSuperhost": true,
+                  "stats": [
+                    { "label": "Reviews", "value": "727" },
+                    { "label": "Rating", "value": "4.98" }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "hostWithoutStats": {
+    "_comment": "passportData without stats — extractHostInfo must omit the key, not emit null/empty.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "hostInfo": {
+                "passportData": {
+                  "name": "Sam",
+                  "titleText": "Superhost",
+                  "isSuperhost": true
+                }
+              }
+            }
+          }
+        }
+      }]
+    ]
   }
+
 }

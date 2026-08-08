@@ -9,6 +9,7 @@ import {
   extractAmenities,
   extractHighlights,
   keyAmenityGroups,
+  extractHostInfo,
 } from "../dist/util.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -116,6 +117,8 @@ test("extraction returns null rather than throwing when the branch moves", () =>
   assert.equal(extractAmenities({}), null);
   assert.equal(extractHighlights(null), null);
   assert.equal(extractHighlights({}), null);
+  assert.equal(extractHostInfo(null), null);
+  assert.equal(extractHostInfo({}), null);
 });
 
 test("extractAmenities returns null when every group is empty", () => {
@@ -211,3 +214,50 @@ test("keyAmenityGroups passes through non-matching objects, arrays, and null unc
   const noGroups = { foo: "bar" };
   assert.deepEqual(keyAmenityGroups(noGroups), noGroups);
 });
+
+// --- HOST Superhost recovery from pdpPresentation.hostInfo.passportData ---
+
+test("extractHostInfo surfaces isSuperhost from passportData", () => {
+  const out = extractHostInfo(findPdpPresentation(fx.hostSuperhost));
+  assert.deepEqual(out, {
+    isSuperhost: true,
+    name: "Lilia",
+    titleText: "Superhost",
+  });
+});
+
+test("extractHostInfo reports isSuperhost false when the host is not a Superhost", () => {
+  const out = extractHostInfo(findPdpPresentation(fx.hostNotSuperhost));
+  assert.equal(out.isSuperhost, false);
+  assert.equal(out.name, "Alex");
+});
+
+test("extractHostInfo returns null when hostInfo is absent", () => {
+  assert.equal(extractHostInfo(findPdpPresentation(fx.hostMissing)), null);
+  assert.equal(extractHostInfo(findPdpPresentation(fx.noPdpBranch)), null);
+});
+
+test("extractHostInfo reads Superhost off the healthy fixture hostInfo", () => {
+  const out = extractHostInfo(findPdpPresentation(fx.healthy));
+  assert.equal(out.isSuperhost, true);
+  assert.equal(out.name, "Nikolai");
+  assert.equal(out.titleText, "Superhost");
+});
+
+test("extractHostInfo includes stats when passportData carries Reviews/Rating", () => {
+  const out = extractHostInfo(findPdpPresentation(fx.hostWithStats));
+  assert.equal(out.isSuperhost, true);
+  assert.equal(out.name, "Lilia");
+  assert.deepEqual(out.stats, [
+    { label: "Reviews", value: "727" },
+    { label: "Rating", value: "4.98" },
+  ]);
+});
+
+test("extractHostInfo omits stats when passportData has none", () => {
+  const out = extractHostInfo(findPdpPresentation(fx.hostWithoutStats));
+  assert.equal(out.isSuperhost, true);
+  assert.equal(out.name, "Sam");
+  assert.equal(out.stats, undefined);
+});
+
