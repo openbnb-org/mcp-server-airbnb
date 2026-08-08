@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, keyAmenityGroups } from "./util.js";
+import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, keyAmenityGroups, extractOccupancy, findBookingPrefetchData, extractCancellationPolicies, extractHouseRules } from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -690,10 +690,17 @@ async function handleAirbnbListingDetails(params: any) {
     },
     "POLICIES_DEFAULT": {
       title: true,
+      cancellationPolicyTitle: true,
+      cancellationPolicyForDisplay: true,
+      houseRulesTitle: true,
+      houseRules: {
+        title: true
+      },
       houseRulesSections: {
         title: true,
-        items : {
-          title: true
+        items: {
+          title: true,
+          subtitle: true
         }
       }
     },
@@ -787,6 +794,36 @@ async function handleAirbnbListingDetails(params: any) {
             extracted.push({ id: sectionId, ...flattenArraysInObject(keyAmenityGroups(replacement.value)) });
           }
         }
+
+        // Occupancy lives on pdpPresentation, not on any allowlisted section.
+        const occupancy = extractOccupancy(pdp);
+        if (occupancy && !extracted.some((s: any) => s.id === "OCCUPANCY")) {
+          recovered.push("OCCUPANCY");
+          extracted.push({ id: "OCCUPANCY", ...occupancy });
+        }
+      }
+
+      // House rules: POLICIES_DEFAULT is still usually populated, but when it is a
+      // bare stub (or dropped), recover a labeled form via extractHouseRules.
+      const policiesSection = sections.find((s: any) => s.sectionId === "POLICIES_DEFAULT")?.section;
+      const houseRules = extractHouseRules(policiesSection);
+      if (houseRules) {
+        const existing = extracted.find((s: any) => s.id === "POLICIES_DEFAULT");
+        if (!existing) {
+          recovered.push("POLICIES_DEFAULT");
+          extracted.push({ id: "POLICIES_DEFAULT", ...flattenArraysInObject(houseRules) });
+        } else if (!existing.houseRulesSections && !existing.houseRules) {
+          recovered.push("POLICIES_DEFAULT");
+          Object.assign(existing, flattenArraysInObject(houseRules));
+        }
+      }
+
+      // Cancellation options live on metadata.bookingPrefetchData, not the
+      // section tree. Surface them as their own details entry when present.
+      const cancellation = extractCancellationPolicies(findBookingPrefetchData(clientData));
+      if (cancellation && !extracted.some((s: any) => s.id === "CANCELLATION_POLICY")) {
+        recovered.push("CANCELLATION_POLICY");
+        extracted.push({ id: "CANCELLATION_POLICY", ...flattenArraysInObject(cancellation) });
       }
 
       details = extracted;

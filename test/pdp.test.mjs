@@ -9,6 +9,10 @@ import {
   extractAmenities,
   extractHighlights,
   keyAmenityGroups,
+  extractOccupancy,
+  findBookingPrefetchData,
+  extractCancellationPolicies,
+  extractHouseRules,
 } from "../dist/util.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -210,4 +214,121 @@ test("keyAmenityGroups passes through non-matching objects, arrays, and null unc
 
   const noGroups = { foo: "bar" };
   assert.deepEqual(keyAmenityGroups(noGroups), noGroups);
+});
+
+// --- occupancy ---
+
+test("extractOccupancy surfaces personCapacity from pdpPresentation", () => {
+  const out = extractOccupancy(findPdpPresentation(fx.withOccupancy));
+  assert.deepEqual(out, { personCapacity: 10 });
+});
+
+test("extractOccupancy returns null when personCapacity is absent or non-numeric", () => {
+  assert.equal(extractOccupancy(null), null);
+  assert.equal(extractOccupancy({}), null);
+  assert.equal(extractOccupancy(findPdpPresentation(fx.healthy)), null);
+  assert.equal(extractOccupancy({ personCapacity: "10" }), null);
+});
+
+// --- house rules ---
+
+test("extractHouseRules preserves quiet-hours subtitles on grouped rules", () => {
+  const out = extractHouseRules(fx.policiesSection);
+  assert.equal(out.title, "Things to know");
+  assert.equal(out.houseRulesTitle, "House rules");
+  const during = out.houseRulesSections.find((s) => s.title === "During your stay");
+  assert.ok(during.items.includes("Quiet hours: 11:00 PM - 7:00 AM"));
+  assert.ok(during.items.includes("10 guests maximum"));
+  assert.ok(during.items.includes("No pets"));
+});
+
+test("extractHouseRules falls back to the short houseRules preview", () => {
+  const out = extractHouseRules(fx.policiesPreviewOnly);
+  assert.deepEqual(out.houseRules, [
+    "Check-in after 4:00 PM",
+    "7 guests maximum",
+  ]);
+  assert.equal(out.title, "House rules");
+});
+
+test("extractHouseRules labels a string subtitle and a { text } subtitle identically", () => {
+  const section = {
+    houseRulesSections: [
+      {
+        title: "During your stay",
+        items: [
+          { title: "Quiet hours", subtitle: "10:00 PM - 7:00 AM" },
+          { title: "Quiet hours", subtitle: { text: "10:00 PM - 7:00 AM" } },
+        ],
+      },
+    ],
+  };
+  const out = extractHouseRules(section);
+  assert.deepEqual(out.houseRulesSections[0].items, [
+    "Quiet hours: 10:00 PM - 7:00 AM",
+    "Quiet hours: 10:00 PM - 7:00 AM",
+  ]);
+});
+
+test("extractHouseRules returns null rather than throwing when rules are gone", () => {
+  assert.equal(extractHouseRules(null), null);
+  assert.equal(extractHouseRules({}), null);
+  assert.equal(extractHouseRules({ houseRulesSections: [] }), null);
+  assert.equal(extractHouseRules({ houseRules: [] }), null);
+});
+
+// --- cancellation policies ---
+
+test("extractCancellationPolicies surfaces dual-rate options with upgrade price", () => {
+  const out = extractCancellationPolicies(fx.bookingPrefetch);
+  assert.deepEqual(out.cancellationPolicies, [
+    {
+      name: "Non-refundable",
+      description:
+        "Free cancellation for 24 hours. After that, the reservation is non-refundable.",
+      priceType: "TIERED_PRICING_STANDARD",
+    },
+    {
+      name: "Refundable",
+      description:
+        "Free cancellation before September 26. Cancel before check-in on October 1 for a partial refund.",
+      priceType: "TIERED_PRICING_FLEXIBLE",
+      price: "$138.67",
+    },
+  ]);
+});
+
+test("extractCancellationPolicies accepts camelCase field names", () => {
+  const out = extractCancellationPolicies(fx.bookingPrefetchCamel);
+  assert.deepEqual(out.cancellationPolicies, [
+    {
+      name: "Flexible",
+      description: "Full refund up to 24 hours before check-in.",
+      priceType: "TIERED_PRICING_FLEXIBLE",
+    },
+  ]);
+});
+
+test("findBookingPrefetchData walks the clientData path without hardcoding beyond the known tree", () => {
+  const prefetch = findBookingPrefetchData(fx.clientDataWithPrefetch);
+  assert.ok(prefetch);
+  const out = extractCancellationPolicies(prefetch);
+  assert.equal(out.cancellationPolicies[0].name, "Moderate");
+});
+
+test("findBookingPrefetchData finds prefetch when it is not at niobeClientData[0]", () => {
+  const prefetch = findBookingPrefetchData(fx.clientDataPrefetchAtNonZeroIndex);
+  assert.ok(prefetch, "expected bookingPrefetchData on a non-zero niobeClientData entry");
+  const out = extractCancellationPolicies(prefetch);
+  assert.equal(out.cancellationPolicies[0].name, "Flexible");
+  assert.equal(out.cancellationPolicies[0].description, "Full refund 1 day prior to arrival.");
+});
+
+test("extractCancellationPolicies returns null when the array is absent or empty", () => {
+  assert.equal(extractCancellationPolicies(null), null);
+  assert.equal(extractCancellationPolicies({}), null);
+  assert.equal(extractCancellationPolicies({ cancellationPolicies: [] }), null);
+  assert.equal(extractCancellationPolicies({ cancellationPolicies: [{ noName: true }] }), null);
+  assert.equal(findBookingPrefetchData({}), null);
+  assert.equal(findBookingPrefetchData(null), null);
 });
