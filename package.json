@@ -1,6 +1,6 @@
 {
   "name": "@openbnb/mcp-server-airbnb",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server for Airbnb search and listing details",
   "license": "MIT",
   "type": "module",
@@ -18,13 +18,16 @@
   },
   "files": [
     "dist",
-    "sync-version.js"
+    "sync-version.js",
+    "!dist/*.mcpb"
   ],
   "scripts": {
     "build": "node sync-version.js && tsc && shx chmod +x dist/*.js",
     "pack": "npm run build && npx @anthropic-ai/mcpb pack . dist/mcp-server-airbnb.mcpb",
     "prepare": "npm run build",
-    "test": "npm run build && node --test \"test/**/*.test.mjs\"",
+    "version": "node sync-version.js && git add manifest.json",
+    "pretest": "npm run build",
+    "test": "node --test \"test/**/*.test.mjs\"",
     "watch": "tsc --watch",
     "sync-version": "node sync-version.js"
   },

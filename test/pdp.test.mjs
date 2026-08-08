@@ -24,17 +24,17 @@ test("findPdpPresentation locates the branch without hardcoding an index", () =>
   assert.equal(findPdpPresentation(null), null);
 });
 
-test("extractAmenities separates available from unavailable", () => {
+test("extractAmenities preserves availability intent without fabricating available lists", () => {
+  // Upstream 0.3.0 shape: each group is { title, amenities: string[] }.
+  // Pure "Not included" groups rely on the group title rather than per-item
+  // "— unavailable" suffixes; mixed groups mark only the unavailable items.
   const out = extractAmenities(findPdpPresentation(fx.healthy));
   const heat = out.seeAllAmenitiesGroups.find((g) => g.title === "Heating and cooling");
   const not = out.seeAllAmenitiesGroups.find((g) => g.title === "Not included");
-  assert.deepEqual(heat.available, ["Central air conditioning", "Ceiling fan"]);
-  assert.ok(!("unavailable" in heat));
-  // available:false is how Airbnb renders a struck-through amenity. A listing can
-  // advertise a dryer in its description while carrying this flag; conflating the two
-  // reports the opposite of the truth.
-  assert.deepEqual(not.unavailable, ["Dryer", "Hot water"]);
-  assert.ok(!("available" in not));
+  assert.deepEqual(heat.amenities, ["Central air conditioning", "Ceiling fan"]);
+  assert.deepEqual(not.amenities, ["Dryer", "Hot water"]);
+  assert.ok(!not.amenities.some((a) => a.includes("unavailable")),
+    "uniform unavailable groups use the group title, not per-item marks");
 });
 
 test("extractHighlights joins a subtitle onto its title when present", () => {
@@ -51,7 +51,7 @@ test("amenities still extract when highlights are gone", () => {
   const pdp = findPdpPresentation(fx.amenitiesOnly);
   const amenities = extractAmenities(pdp);
   assert.ok(amenities, "amenities must survive a missing highlights field");
-  assert.deepEqual(amenities.seeAllAmenitiesGroups[0].available, [
+  assert.deepEqual(amenities.seeAllAmenitiesGroups[0].amenities, [
     "AC - split type ductless system",
   ]);
   assert.equal(extractHighlights(pdp), null, "missing highlights report as null, not as an error");
@@ -63,7 +63,7 @@ test("a malformed amenity group does not destroy the healthy groups around it", 
   assert.ok(titles.includes("Bathroom"), "groups before the bad one must survive");
   assert.ok(titles.includes("Kitchen"), "groups after the bad one must survive");
   const bathroom = out.seeAllAmenitiesGroups.find((g) => g.title === "Bathroom");
-  assert.deepEqual(bathroom.available, ["Hair dryer"]);
+  assert.deepEqual(bathroom.amenities, ["Hair dryer"]);
 });
 
 test("extraction returns null rather than throwing when the branch moves", () => {
