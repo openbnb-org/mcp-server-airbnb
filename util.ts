@@ -192,3 +192,122 @@ export function extractHighlights(pdp: any): any | null {
 
   return mapped.length ? { highlights: mapped } : null;
 }
+
+/** Finite personCapacity on pdpPresentation; null when missing/non-numeric. */
+export function extractOccupancy(pdp: any): any | null {
+  const capacity = pdp?.personCapacity;
+  if (typeof capacity !== "number" || !Number.isFinite(capacity)) return null;
+  return { personCapacity: capacity };
+}
+
+/**
+ * bookingPrefetchData lives on section-tree metadata, not pdpPresentation.
+ * Walks niobeClientData like findPdpPresentation — index 0 is not guaranteed.
+ */
+export function findBookingPrefetchData(clientData: any): any | null {
+  const entries = clientData?.niobeClientData;
+  if (!Array.isArray(entries)) return null;
+  for (const entry of entries) {
+    const prefetch =
+      entry?.[1]?.data?.presentation?.stayProductDetailPage?.sections?.metadata
+        ?.bookingPrefetchData;
+    if (prefetch && typeof prefetch === "object") return prefetch;
+  }
+  return null;
+}
+
+export function extractCancellationPolicies(prefetch: any): any | null {
+  const policies = prefetch?.cancellationPolicies;
+  if (!Array.isArray(policies) || policies.length === 0) return null;
+
+  const mapped = policies
+    .map((p: any) => {
+      // Airbnb has shipped both snake_case (legacy) and camelCase keys.
+      const name =
+        p?.localized_cancellation_policy_name ??
+        p?.localizedCancellationPolicyName ??
+        null;
+      if (!name) return null;
+
+      const description =
+        typeof p?.book_it_module_tooltip === "string"
+          ? p.book_it_module_tooltip
+          : typeof p?.bookItModuleTooltip === "string"
+            ? p.bookItModuleTooltip
+            : null;
+
+      const priceType =
+        p?.cancellation_policy_price_type ??
+        p?.cancellationPolicyPriceType ??
+        null;
+
+      // Price field names vary and are often absent from the initial SSR payload.
+      const price =
+        p?.price ??
+        p?.displayPrice?.amount ??
+        p?.structuredDisplayPrice?.primaryLine?.price ??
+        p?.optionalityPriceDetail?.price ??
+        null;
+
+      return {
+        name,
+        ...(description ? { description } : {}),
+        ...(priceType ? { priceType } : {}),
+        ...(price != null && price !== "" ? { price } : {}),
+      };
+    })
+    .filter(Boolean);
+
+  return mapped.length ? { cancellationPolicies: mapped } : null;
+}
+
+/** POLICIES_DEFAULT house rules: full sections first, then short preview list. */
+export function extractHouseRules(policiesSection: any): any | null {
+  if (!policiesSection || typeof policiesSection !== "object") return null;
+
+  const label = (item: any) => {
+    const title = item?.title;
+    if (!title) return null;
+    const sub =
+      typeof item?.subtitle === "string"
+        ? item.subtitle
+        : item?.subtitle?.text;
+    return sub ? `${title}: ${sub}` : title;
+  };
+
+  const sections = policiesSection.houseRulesSections;
+  if (Array.isArray(sections) && sections.length > 0) {
+    const mapped = sections
+      .map((sec: any) => {
+        const items = Array.isArray(sec?.items) ? sec.items : [];
+        const labeled = items.map(label).filter(Boolean);
+        return labeled.length ? { title: sec?.title, items: labeled } : null;
+      })
+      .filter(Boolean);
+
+    if (mapped.length) {
+      return {
+        ...(policiesSection.title ? { title: policiesSection.title } : {}),
+        ...(policiesSection.houseRulesTitle
+          ? { houseRulesTitle: policiesSection.houseRulesTitle }
+          : {}),
+        houseRulesSections: mapped,
+      };
+    }
+  }
+
+  const preview = policiesSection.houseRules;
+  if (Array.isArray(preview) && preview.length > 0) {
+    const items = preview.map(label).filter(Boolean);
+    if (items.length) {
+      return {
+        ...(policiesSection.houseRulesTitle
+          ? { title: policiesSection.houseRulesTitle }
+          : {}),
+        houseRules: items,
+      };
+    }
+  }
+
+  return null;
+}

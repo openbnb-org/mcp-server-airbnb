@@ -24,7 +24,7 @@ class MCPTester {
 
   async startServer() {
     console.log('🚀 Starting MCP server...');
-    
+
     this.server = spawn('node', [SERVER_PATH, '--ignore-robots-txt'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, IGNORE_ROBOTS_TXT: 'true' }
@@ -34,13 +34,21 @@ class MCPTester {
       console.log('📋 Server log:', data.toString().trim());
     });
 
-    // Wait for server to start
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
     if (this.server.killed) {
       throw new Error('Server failed to start');
     }
-    
+
+    // Await the real initialize response instead of a fixed sleep.
+    const initResponse = await this.sendRequest('initialize', {
+      protocolVersion: '2024-11-05',
+      capabilities: {},
+      clientInfo: { name: 'test-extension', version: '1' },
+    });
+    if (initResponse.error) {
+      throw new Error(`initialize failed: ${initResponse.error.message}`);
+    }
+    this.server.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+
     console.log('✅ Server started successfully');
   }
 
@@ -260,6 +268,11 @@ class MCPTester {
           name: 'airbnb_search',
           arguments: { location: c.location, ignoreRobotsText: true },
         });
+        if (response.error) {
+          console.log(`   ❌ ${c.label}: JSON-RPC error: ${response.error.message || JSON.stringify(response.error)}`);
+          allOk = false;
+          continue;
+        }
         const url = this._extractSearchUrl(response);
         const bbox = parseBbox(url);
         if (!bbox) {

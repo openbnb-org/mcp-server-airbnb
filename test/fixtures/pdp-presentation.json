@@ -1,0 +1,282 @@
+{
+  "_comment": "Shapes of niobeClientData[i][1].data.node.pdpPresentation. 'healthy' is trimmed from a real listing payload; the others are synthesized to exercise specific edge cases. Real entries carry a string operation-name key at index 0, not null.",
+
+  "healthy": {
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", { "data": { "presentation": {} } }],
+      ["StaysPdpReviewsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "title": "What this place offers",
+                "seeAllAmenitiesGroups": [
+                  {
+                    "__typename": "AmenityItemsGroup",
+                    "title": "Heating and cooling",
+                    "amenities": [
+                      { "available": true, "title": "Central air conditioning", "subtitle": { "text": "" } },
+                      { "available": true, "title": "Ceiling fan", "subtitle": { "text": "" } }
+                    ]
+                  },
+                  {
+                    "__typename": "AmenityItemsGroup",
+                    "title": "Not included",
+                    "amenities": [
+                      { "available": false, "title": "Dryer", "subtitle": { "text": "" } },
+                      { "available": false, "title": "Hot water", "subtitle": { "text": "" } }
+                    ]
+                  }
+                ]
+              },
+              "highlights": [
+                { "title": "Dive right in", "subtitle": "This is one of the few places in the area with a pool." },
+                { "title": "Peace and quiet" }
+              ]
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "amenitiesOnly": {
+    "_comment": "Highlights have moved or vanished, amenities are fine. Partial extraction must still return the amenities.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "title": "What this place offers",
+                "seeAllAmenitiesGroups": [
+                  {
+                    "title": "Heating and cooling",
+                    "amenities": [{ "available": true, "title": "AC - split type ductless system" }]
+                  }
+                ]
+              },
+              "highlights": null
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "partiallyMalformedGroups": {
+    "_comment": "One amenity group is garbage. The healthy groups around it must survive.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "seeAllAmenitiesGroups": [
+                  { "title": "Bathroom", "amenities": [{ "available": true, "title": "Hair dryer" }] },
+                  { "title": "Broken group", "amenities": "this should be an array" },
+                  { "title": "Kitchen", "amenities": [{ "available": true, "title": "Oven" }] }
+                ]
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "noPdpBranch": {
+    "_comment": "Airbnb moved the branch again. Extraction must return null, not throw.",
+    "niobeClientData": [["StaysPdpSectionsQuery", { "data": { "presentation": {} } }]]
+  },
+
+  "subtitleShapes": {
+    "_comment": "Airbnb has shipped amenity and highlight subtitles as both a plain string and a { text } object. Both shapes must produce the same label.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "seeAllAmenitiesGroups": [
+                  {
+                    "title": "Bathroom",
+                    "amenities": [
+                      { "available": true, "title": "Shampoo", "subtitle": "Body wash" },
+                      { "available": true, "title": "Hair dryer", "subtitle": { "text": "1200W" } }
+                    ]
+                  }
+                ]
+              },
+              "highlights": [
+                { "title": "Great location", "subtitle": "Walk to the beach" },
+                { "title": "Self check-in", "subtitle": { "text": "Check yourself in with the keypad." } }
+              ]
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "withOccupancy": {
+    "_comment": "personCapacity is a top-level number on pdpPresentation. Extraction must surface it; absence must return null.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "personCapacity": 10,
+              "highlights": [{ "title": "Great location" }]
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "policiesSection": {
+    "_comment": "Realistic POLICIES_DEFAULT.section shape: grouped house rules with a quiet-hours subtitle. Cancellation is null here — it lives on bookingPrefetchData.",
+    "title": "Things to know",
+    "cancellationPolicyTitle": "Cancellation policy",
+    "cancellationPolicyForDisplay": null,
+    "houseRulesTitle": "House rules",
+    "houseRules": [
+      { "title": "Check-in after 3:00 PM" },
+      { "title": "Checkout before 11:00 AM" },
+      { "title": "10 guests maximum" }
+    ],
+    "houseRulesSections": [
+      {
+        "title": "Checking in and out",
+        "items": [
+          { "title": "Check-in after 3:00 PM" },
+          { "title": "Checkout before 11:00 AM" },
+          { "title": "Self check-in with smart lock" }
+        ]
+      },
+      {
+        "title": "During your stay",
+        "items": [
+          { "title": "10 guests maximum" },
+          { "title": "No pets" },
+          { "title": "Quiet hours", "subtitle": "11:00 PM - 7:00 AM" },
+          { "title": "No parties or events" },
+          { "title": "No smoking" }
+        ]
+      }
+    ]
+  },
+
+  "policiesPreviewOnly": {
+    "_comment": "Only the short houseRules preview is present — sections tree is gone.",
+    "houseRulesTitle": "House rules",
+    "houseRules": [
+      { "title": "Check-in after 4:00 PM" },
+      { "title": "7 guests maximum" }
+    ]
+  },
+
+  "bookingPrefetch": {
+    "_comment": "sections.metadata.bookingPrefetchData shape for dual-rate cancellation (snake_case, as shipped).",
+    "cancellationPolicies": [
+      {
+        "__typename": "LegacyPdpCancellationSection",
+        "cancellation_policy_price_type": "TIERED_PRICING_STANDARD",
+        "book_it_module_tooltip": "Free cancellation for 24 hours. After that, the reservation is non-refundable.",
+        "cancellation_policy_id": 51,
+        "localized_cancellation_policy_name": "Non-refundable"
+      },
+      {
+        "__typename": "LegacyPdpCancellationSection",
+        "cancellation_policy_price_type": "TIERED_PRICING_FLEXIBLE",
+        "book_it_module_tooltip": "Free cancellation before September 26. Cancel before check-in on October 1 for a partial refund.",
+        "cancellation_policy_id": 4,
+        "localized_cancellation_policy_name": "Refundable",
+        "price": "$138.67"
+      }
+    ]
+  },
+
+  "bookingPrefetchCamel": {
+    "_comment": "Same dual-rate shape with camelCase keys, in case Airbnb renames the legacy fields.",
+    "cancellationPolicies": [
+      {
+        "localizedCancellationPolicyName": "Flexible",
+        "bookItModuleTooltip": "Full refund up to 24 hours before check-in.",
+        "cancellationPolicyPriceType": "TIERED_PRICING_FLEXIBLE"
+      }
+    ]
+  },
+
+  "clientDataWithPrefetch": {
+    "_comment": "Minimal clientData path used by findBookingPrefetchData.",
+    "niobeClientData": [
+      [null, {
+        "data": {
+          "presentation": {
+            "stayProductDetailPage": {
+              "sections": {
+                "metadata": {
+                  "bookingPrefetchData": {
+                    "cancellationPolicies": [
+                      {
+                        "localized_cancellation_policy_name": "Moderate",
+                        "book_it_module_tooltip": "Full refund up to 5 days before check-in."
+                      }
+                    ]
+                  }
+                },
+                "sections": []
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+  "clientDataPrefetchAtNonZeroIndex": {
+    "_comment": "Prefetch branch at niobeClientData[1]; [0] is a decoy without bookingPrefetchData (guards against hardcoding [0][1]).",
+    "niobeClientData": [
+      [
+        null,
+        {
+          "data": {
+            "presentation": {
+              "stayProductDetailPage": {
+                "sections": {
+                  "metadata": {},
+                  "sections": []
+                }
+              }
+            }
+          }
+        }
+      ],
+      [
+        null,
+        {
+          "data": {
+            "presentation": {
+              "stayProductDetailPage": {
+                "sections": {
+                  "metadata": {
+                    "bookingPrefetchData": {
+                      "cancellationPolicies": [
+                        {
+                          "localized_cancellation_policy_name": "Flexible",
+                          "book_it_module_tooltip": "Full refund 1 day prior to arrival."
+                        }
+                      ]
+                    }
+                  },
+                  "sections": []
+                }
+              }
+            }
+          }
+        }
+      ]
+    ]
+  }
+}
