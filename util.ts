@@ -48,6 +48,38 @@ export function pickBySchema(obj: any, schema: any): any {
   return result;
 }
 
+/**
+ * Projection for search-result badges through the flatten pipeline.
+ *
+ * Only `text` goes through pickBySchema → flattenArraysInObject so the flattened
+ * badges string stays byte-identical to pre-fix output (e.g. "Guest favorite").
+ * The machine-readable type is attached separately via extractBadgeType — same
+ * pattern as priceBreakdown: structured data rides alongside the flatten result,
+ * never inside it.
+ */
+export const searchBadgeSchema: Record<string, any> = {
+  text: true,
+};
+
+/**
+ * Pull the machine-readable badge type off a raw search result before flatten
+ * collapses the badge object into a string.
+ *
+ * Airbnb assigns one badge per card. Guest favorite often wins the displayed
+ * `text`, while `loggingContext.badgeType` still carries SUPERHOST /
+ * TOP_X_GUEST_FAVORITE / etc. Call before or after cleanObject (badgeType is not
+ * stripped). Returns null when no type is present.
+ */
+export function extractBadgeType(raw: any): string | null {
+  const badges = raw?.badges;
+  if (!Array.isArray(badges)) return null;
+  for (const badge of badges) {
+    const t = badge?.loggingContext?.badgeType;
+    if (typeof t === "string" && t.trim()) return t;
+  }
+  return null;
+}
+
 export function flattenArraysInObject(input: any, inArray: boolean = false): any {
   if (Array.isArray(input)) {
     // Process each item in the array with inArray=true so that any object
@@ -192,3 +224,48 @@ export function extractHighlights(pdp: any): any | null {
 
   return mapped.length ? { highlights: mapped } : null;
 }
+
+/**
+ * Host Superhost status (and optional passport stats) from
+ * pdpPresentation.hostInfo.passportData.
+ * MEET_YOUR_HOST sections arrive as stubs; the live boolean lives here.
+ * Returns null when the branch is absent or isSuperhost is not a boolean.
+ *
+ * `stats` (Reviews / Rating / …) is projected when Airbnb includes it on the
+ * hostInfo branch — as `passportData.stats` or `hostInfo.stats`. Each entry is
+ * `{ label, value }`; malformed items are skipped rather than poisoning the rest.
+ */
+export function extractHostInfo(pdp: any): any | null {
+  const hostInfo = pdp?.hostInfo;
+  const passport = hostInfo?.passportData;
+  if (!passport || typeof passport !== "object") return null;
+  if (typeof passport.isSuperhost !== "boolean") return null;
+
+  const out: Record<string, any> = { isSuperhost: passport.isSuperhost };
+  if (typeof passport.name === "string" && passport.name.trim()) out.name = passport.name;
+  if (typeof passport.titleText === "string" && passport.titleText.trim()) {
+    out.titleText = passport.titleText;
+  }
+
+  const rawStats = Array.isArray(passport.stats)
+    ? passport.stats
+    : Array.isArray(hostInfo?.stats)
+      ? hostInfo.stats
+      : null;
+  if (rawStats) {
+    const stats = rawStats
+      .map((s: any) => {
+        if (!s || typeof s !== "object") return null;
+        const label = typeof s.label === "string" ? s.label : null;
+        const value =
+          typeof s.value === "string" || typeof s.value === "number" ? s.value : null;
+        if (label == null || value == null) return null;
+        return { label, value: String(value) };
+      })
+      .filter(Boolean);
+    if (stats.length) out.stats = stats;
+  }
+
+  return out;
+}
+

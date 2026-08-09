@@ -1,0 +1,233 @@
+{
+  "_comment": "Shapes of niobeClientData[i][1].data.node.pdpPresentation. 'healthy' is trimmed from a real listing payload; the others are synthesized to exercise specific edge cases. Real entries carry a string operation-name key at index 0, not null.",
+
+  "healthy": {
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", { "data": { "presentation": {} } }],
+      ["StaysPdpReviewsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "title": "What this place offers",
+                "seeAllAmenitiesGroups": [
+                  {
+                    "__typename": "AmenityItemsGroup",
+                    "title": "Heating and cooling",
+                    "amenities": [
+                      { "available": true, "title": "Central air conditioning", "subtitle": { "text": "" } },
+                      { "available": true, "title": "Ceiling fan", "subtitle": { "text": "" } }
+                    ]
+                  },
+                  {
+                    "__typename": "AmenityItemsGroup",
+                    "title": "Not included",
+                    "amenities": [
+                      { "available": false, "title": "Dryer", "subtitle": { "text": "" } },
+                      { "available": false, "title": "Hot water", "subtitle": { "text": "" } }
+                    ]
+                  }
+                ]
+              },
+              "highlights": [
+                { "title": "Dive right in", "subtitle": "This is one of the few places in the area with a pool." },
+                { "title": "Peace and quiet" }
+              ],
+              "hostInfo": {
+                "passportData": {
+                  "name": "Nikolai",
+                  "titleText": "Superhost",
+                  "isSuperhost": true,
+                  "isVerified": true
+                }
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "amenitiesOnly": {
+    "_comment": "Highlights have moved or vanished, amenities are fine. Partial extraction must still return the amenities.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "title": "What this place offers",
+                "seeAllAmenitiesGroups": [
+                  {
+                    "title": "Heating and cooling",
+                    "amenities": [{ "available": true, "title": "AC - split type ductless system" }]
+                  }
+                ]
+              },
+              "highlights": null
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "partiallyMalformedGroups": {
+    "_comment": "One amenity group is garbage. The healthy groups around it must survive.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "seeAllAmenitiesGroups": [
+                  { "title": "Bathroom", "amenities": [{ "available": true, "title": "Hair dryer" }] },
+                  { "title": "Broken group", "amenities": "this should be an array" },
+                  { "title": "Kitchen", "amenities": [{ "available": true, "title": "Oven" }] }
+                ]
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "noPdpBranch": {
+    "_comment": "Airbnb moved the branch again. Extraction must return null, not throw.",
+    "niobeClientData": [["StaysPdpSectionsQuery", { "data": { "presentation": {} } }]]
+  },
+
+  "subtitleShapes": {
+    "_comment": "Airbnb has shipped amenity and highlight subtitles as both a plain string and a { text } object. Both shapes must produce the same label.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "seeAllAmenitiesGroups": [
+                  {
+                    "title": "Bathroom",
+                    "amenities": [
+                      { "available": true, "title": "Shampoo", "subtitle": "Body wash" },
+                      { "available": true, "title": "Hair dryer", "subtitle": { "text": "1200W" } }
+                    ]
+                  }
+                ]
+              },
+              "highlights": [
+                { "title": "Great location", "subtitle": "Walk to the beach" },
+                { "title": "Self check-in", "subtitle": { "text": "Check yourself in with the keypad." } }
+              ]
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "hostSuperhost": {
+    "_comment": "passportData.isSuperhost true — the live Superhost signal (MEET_YOUR_HOST is a stub).",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "hostInfo": {
+                "passportData": {
+                  "name": "Lilia",
+                  "titleText": "Superhost",
+                  "isSuperhost": true
+                }
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "hostNotSuperhost": {
+    "_comment": "passportData present with isSuperhost false.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "hostInfo": {
+                "passportData": {
+                  "name": "Alex",
+                  "titleText": "Host",
+                  "isSuperhost": false
+                }
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "hostMissing": {
+    "_comment": "pdp present but no hostInfo — extractHostInfo must return null.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "highlights": [{ "title": "Quiet" }]
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "hostWithStats": {
+    "_comment": "passportData with stats (Reviews/Rating) — projected when Airbnb provides them.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "hostInfo": {
+                "passportData": {
+                  "name": "Lilia",
+                  "titleText": "Superhost",
+                  "isSuperhost": true,
+                  "stats": [
+                    { "label": "Reviews", "value": "727" },
+                    { "label": "Rating", "value": "4.98" }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "hostWithoutStats": {
+    "_comment": "passportData without stats — extractHostInfo must omit the key, not emit null/empty.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "hostInfo": {
+                "passportData": {
+                  "name": "Sam",
+                  "titleText": "Superhost",
+                  "isSuperhost": true
+                }
+              }
+            }
+          }
+        }
+      }]
+    ]
+  }
+
+}

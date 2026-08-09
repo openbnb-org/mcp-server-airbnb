@@ -13,7 +13,10 @@ function call(id) {
       stdio: ["pipe", "pipe", "pipe"],
     });
     let buf = "";
+    let toolCallSent = false;
     const timer = setTimeout(() => { proc.kill(); reject(new Error("timeout")); }, 60000);
+
+    const send = (o) => proc.stdin.write(JSON.stringify(o) + "\n");
 
     proc.stdout.on("data", (d) => {
       buf += d.toString();
@@ -21,23 +24,36 @@ function call(id) {
         if (!line.trim().startsWith("{")) continue;
         let msg;
         try { msg = JSON.parse(line); } catch { continue; }
+
+        // The id-1 reply, not a fixed sleep, is what says the server is ready.
+        if (msg.id === 1 && !toolCallSent) {
+          toolCallSent = true;
+          send({ jsonrpc: "2.0", method: "notifications/initialized" });
+          send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: {
+            name: "airbnb_listing_details", arguments: { id, ignoreRobotsText: true } } });
+          continue;
+        }
+
         if (msg.id === 2) {
           clearTimeout(timer);
           proc.kill();
-          resolve(JSON.parse(msg.result.content[0].text));
+          if (msg.error) {
+            reject(new Error(`JSON-RPC error: ${JSON.stringify(msg.error)}`));
+            return;
+          }
+          const text = msg.result?.content?.[0]?.text;
+          if (!text) {
+            reject(new Error(`malformed tools/call response: ${JSON.stringify(msg)}`));
+            return;
+          }
+          resolve(JSON.parse(text));
         }
       }
     });
     proc.on("error", reject);
 
-    const send = (o) => proc.stdin.write(JSON.stringify(o) + "\n");
     send({ jsonrpc: "2.0", id: 1, method: "initialize", params: {
       protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "t", version: "1" } } });
-    setTimeout(() => {
-      send({ jsonrpc: "2.0", method: "notifications/initialized" });
-      send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: {
-        name: "airbnb_listing_details", arguments: { id, ignoreRobotsText: true } } });
-    }, 700);
   });
 }
 

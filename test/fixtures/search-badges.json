@@ -1,0 +1,66 @@
+{
+  "_comment": "Raw ExploreFormattedBadge shapes as they appear before pickBySchema. Includes the disagreement case: Guest favorite text + SUPERHOST type.",
+  "guestFavoriteButSuperhost": {
+    "demandStayListing": {
+      "id": "RGVtYW5kU3RheUxpc3Rpbmc6MzAzMjYzMTA=",
+      "description": {
+        "name": {
+          "localizedStringWithTranslationPreference": "Historic Condo"
+        }
+      },
+      "location": {
+        "coordinate": {
+          "latitude": 48.41,
+          "longitude": -114.34
+        }
+      }
+    },
+    "badges": [
+      {
+        "__typename": "ExploreFormattedBadge",
+        "text": "Guest favorite",
+        "loggingContext": {
+          "__typename": "ExploreFormattedBadgeLoggingContext",
+          "badgeType": "SUPERHOST"
+        },
+        "style": "LOUD_ROUNDED_PILL"
+      }
+    ],
+    "avgRatingA11yLabel": "4.98 out of 5 average rating, 727 reviews"
+  },
+  "superhostBadge": {
+    "demandStayListing": {
+      "id": "RGVtYW5kU3RheUxpc3Rpbmc6MTcyNDc2NTcwMTI3NzEwOTQwMA=="
+    },
+    "badges": [
+      {
+        "text": "Superhost",
+        "loggingContext": {
+          "badgeType": "SUPERHOST"
+        }
+      }
+    ]
+  },
+  "guestFavoriteOnly": {
+    "demandStayListing": {
+      "id": "RGVtYW5kU3RheUxpc3Rpbmc6NTEyNjcwMTk="
+    },
+    "badges": [
+      {
+        "text": "Guest favorite",
+        "loggingContext": {
+          "badgeType": "TOP_X_GUEST_FAVORITE"
+        }
+      }
+    ]
+  },
+  "textOnlyBadge": {
+    "_comment": "Older payload shape with text but no loggingContext \u2014 must still project text.",
+    "badges": [
+      {
+        "text": "Guest favorite",
+        "style": "PILL"
+      }
+    ]
+  }
+}
