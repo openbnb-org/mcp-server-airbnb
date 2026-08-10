@@ -117,5 +117,67 @@
         }
       }]
     ]
+  },
+
+  "highlightsNewShape": {
+    "_comment": "Live payload shape observed 2025-08 on listing 53610715: headline/body are { __typename: 'LocalizedContent', localizedContent: '...' } objects, not plain strings.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "highlights": [
+                {
+                  "__typename": "ListingPdpHighlight",
+                  "type": "LISTING_GUEST_FAVORITE",
+                  "headline": { "__typename": "LocalizedContent", "localizedContent": "Top 10% of homes" },
+                  "body": { "__typename": "LocalizedContent", "localizedContent": "This home is highly ranked based on ratings, reviews, and reliability." },
+                  "icon": { "__typename": "IconWrapper", "iconContent": "SYSTEM_GOLDEN_TROPHY" }
+                },
+                {
+                  "__typename": "ListingPdpHighlight",
+                  "type": "POOL",
+                  "headline": { "__typename": "LocalizedContent", "localizedContent": "Dive right in" },
+                  "body": { "__typename": "LocalizedContent", "localizedContent": "This is one of the few places in the area with a pool." },
+                  "icon": { "__typename": "IconWrapper", "iconContent": "SYSTEM_POOL" }
+                },
+                {
+                  "__typename": "ListingPdpHighlight",
+                  "type": "QUIET",
+                  "headline": { "__typename": "LocalizedContent", "localizedContent": "Peace and quiet" },
+                  "icon": { "__typename": "IconWrapper", "iconContent": "SYSTEM_QUIET" }
+                },
+                {
+                  "__typename": "ListingPdpHighlight",
+                  "type": "PARKING",
+                  "headline": { "__typename": "LocalizedContent", "localizedContent": "Free parking" },
+                  "body": { "__typename": "LocalizedContent", "localizedContent": "Free parking on premises" },
+                  "icon": { "__typename": "IconWrapper", "iconContent": "SYSTEM_PARKING" }
+                }
+              ]
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "highlightsMixed": {
+    "_comment": "Edge cases: one item has neither headline nor title (must be skipped), one has headline only, one has title only (legacy). Tests that both shapes coexist and the null-title guard still fires.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "highlights": [
+                { "__typename": "PdpHighlight", "type": "UNKNOWN" },
+                { "headline": "Great for families" },
+                { "title": "Superhost" }
+              ]
+            }
+          }
+        }
+      }]
+    ]
   }
 }

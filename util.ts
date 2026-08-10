@@ -175,17 +175,26 @@ export function keyAmenityGroups(section: any): any {
   return { ...section, seeAllAmenitiesGroups: keyed };
 }
 
+// Normalize a localized field to its string across all known shapes:
+// plain string | { localizedContent } | { text }
+function localizedStr(v: any): string | undefined {
+  const s = typeof v === "string" ? v : v?.localizedContent ?? v?.text;
+  // Anything non-string would stringify to "[object Object]" downstream; an empty
+  // string must read as missing so the legacy key below still gets its turn.
+  return typeof s === "string" && s !== "" ? s : undefined;
+}
+
 export function extractHighlights(pdp: any): any | null {
   const highlights = pdp?.highlights;
   if (!Array.isArray(highlights) || highlights.length === 0) return null;
   const mapped = highlights
     .map((h: any) => {
-      const title = h?.title;
+      // Live payloads now use headline/body; older ones used title/subtitle. Accept both.
+      const title = localizedStr(h?.headline) ?? localizedStr(h?.title);
       // Interpolating first would turn a missing title into the literal string
       // "null: Free parking on premises", which .filter(Boolean) cannot catch.
       if (!title) return null;
-      // Airbnb has shipped this as both a plain string and a { text } object.
-      const sub = typeof h?.subtitle === "string" ? h.subtitle : h?.subtitle?.text;
+      const sub = localizedStr(h?.body) ?? localizedStr(h?.subtitle);
       return sub ? `${title}: ${sub}` : title;
     })
     .filter(Boolean);

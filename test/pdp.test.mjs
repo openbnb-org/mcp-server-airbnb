@@ -211,3 +211,80 @@ test("keyAmenityGroups passes through non-matching objects, arrays, and null unc
   const noGroups = { foo: "bar" };
   assert.deepEqual(keyAmenityGroups(noGroups), noGroups);
 });
+
+// --- Airbnb now ships headline/body instead of title/subtitle.
+// Both shapes must be accepted. ---
+
+test("extractHighlights maps the new headline/body shape (nested LocalizedContent) correctly", () => {
+  const out = extractHighlights(findPdpPresentation(fx.highlightsNewShape));
+  assert.ok(out, "expected highlights, got null");
+  assert.deepEqual(out.highlights, [
+    "Top 10% of homes: This home is highly ranked based on ratings, reviews, and reliability.",
+    "Dive right in: This is one of the few places in the area with a pool.",
+    "Peace and quiet",
+    "Free parking: Free parking on premises",
+  ]);
+});
+
+test("extractHighlights still maps the legacy title/subtitle shape (no regression)", () => {
+  const out = extractHighlights(findPdpPresentation(fx.healthy));
+  assert.deepEqual(out.highlights, [
+    "Dive right in: This is one of the few places in the area with a pool.",
+    "Peace and quiet",
+  ]);
+});
+
+test("extractHighlights handles body as a { text } object", () => {
+  const pdp = { highlights: [
+    { headline: "Self check-in", body: { text: "Check yourself in with the lockbox." } },
+  ] };
+  const out = extractHighlights(pdp);
+  assert.ok(out, "expected highlights, got null");
+  assert.deepEqual(out.highlights, ["Self check-in: Check yourself in with the lockbox."]);
+});
+
+test("extractHighlights ignores non-string localized values instead of stringifying them", () => {
+  const pdp = { highlights: [
+    { headline: { localizedContent: { text: "nested" } }, title: "Superhost", body: "Great host" },
+    { headline: { localizedContent: ["a", "b"] } },
+  ] };
+  const out = extractHighlights(pdp);
+  assert.deepEqual(out.highlights, ["Superhost: Great host"]);
+});
+
+test("extractHighlights treats an empty new-shape value as missing and falls back to the legacy key", () => {
+  const pdp = { highlights: [
+    { headline: "", title: "Superhost", body: "", subtitle: "Great host" },
+  ] };
+  const out = extractHighlights(pdp);
+  assert.deepEqual(out.highlights, ["Superhost: Great host"]);
+});
+
+test("extractHighlights output is always plain strings, never raw GraphQL objects", () => {
+  // Regression guard: the previous code returned LocalizedContent objects instead
+  // of extracting .localizedContent, so the output contained __typename keys.
+  for (const key of ["highlightsNewShape", "healthy", "subtitleShapes", "highlightsMixed"]) {
+    const pdp = findPdpPresentation(fx[key]);
+    const out = extractHighlights(pdp);
+    assert.ok(out, `${key} must yield highlights`);
+    for (const h of out.highlights) {
+      assert.equal(typeof h, "string", `highlight in ${key} must be a string, got: ${JSON.stringify(h)}`);
+      assert.ok(!h.includes("__typename"), `highlight in ${key} must not contain __typename: ${h}`);
+    }
+  }
+});
+
+test("extractHighlights skips items missing both headline and title (no 'null: ...' string)", () => {
+  const out = extractHighlights(findPdpPresentation(fx.highlightsMixed));
+  assert.deepEqual(out.highlights, ["Great for families", "Superhost"]);
+  for (const h of out.highlights) {
+    assert.ok(!h.startsWith("null"), `must never produce a "null: ..." string, got: ${h}`);
+  }
+});
+
+test("extractHighlights returns null for empty and absent highlights", () => {
+  assert.equal(extractHighlights({ highlights: [] }), null);
+  assert.equal(extractHighlights({ highlights: null }), null);
+  assert.equal(extractHighlights({}), null);
+  assert.equal(extractHighlights(null), null);
+});
