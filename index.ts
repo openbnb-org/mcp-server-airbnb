@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, keyAmenityGroups } from "./util.js";
+import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, keyAmenityGroups, detectDomainHandoff, normalizeBaseUrl, DEFAULT_BASE_URL } from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -147,7 +147,26 @@ const AIRBNB_TOOLS = [
 
 // Utility functions
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-const BASE_URL = "https://www.airbnb.com";
+// Airbnb serves a per-country domain and hands off to it based on request origin,
+// so www.airbnb.com never returns a parseable page from some regions. Set
+// AIRBNB_BASE_URL to a country domain (e.g. https://www.airbnb.co.uk) to query it
+// directly. Applies to robots.txt, search and listing requests alike.
+const BASE_URL = (() => {
+  const configured = process.env.AIRBNB_BASE_URL;
+  if (!configured || !configured.trim()) return DEFAULT_BASE_URL;
+
+  const normalized = normalizeBaseUrl(configured);
+  if (normalized) return normalized;
+
+  // Fall back rather than refusing to start, but say why: a silent fallback here
+  // would look identical to the bug AIRBNB_BASE_URL exists to work around.
+  log('error', 'Ignoring invalid AIRBNB_BASE_URL, falling back to the default domain', {
+    provided: configured,
+    expected: 'an absolute http(s) URL, e.g. https://www.airbnb.co.uk',
+    using: DEFAULT_BASE_URL
+  });
+  return DEFAULT_BASE_URL;
+})();
 
 // Geocode location using Photon (fast, no rate limits) with Nominatim fallback.
 // This bypasses Airbnb's broken server-side geocoding for non-US locations.
@@ -398,6 +417,26 @@ async function fetchWithUserAgent(url: string, timeout: number = 30000) {
   }
 }
 
+// Airbnb answers with a country-domain handoff stub instead of the page when the
+// configured domain doesn't match the request origin. Detect it and say so, rather
+// than letting the parsers report it as an Airbnb page-structure change.
+function assertNotDomainHandoff(html: string, url: string) {
+  const target = detectDomainHandoff(html);
+  if (!target || target === BASE_URL) return;
+
+  log('warn', 'Airbnb served a country-domain handoff page instead of content', {
+    requested: BASE_URL,
+    handoffTarget: target,
+    url
+  });
+
+  throw new Error(
+    `Airbnb handed this request off to its ${new URL(target).host} country domain ` +
+    `instead of serving ${url}, so there was no page to parse. ` +
+    `Set AIRBNB_BASE_URL=${target} to query that domain directly.`
+  );
+}
+
 // API handlers
 async function handleAirbnbSearch(params: any) {
   const {
@@ -542,6 +581,7 @@ async function handleAirbnbSearch(params: any) {
     
     const response = await fetchWithUserAgent(searchUrl.toString());
     const html = await response.text();
+    assertNotDomainHandoff(html, searchUrl.toString());
     const $ = cheerio.load(html);
     
     let staysSearchResults: any = {};
@@ -724,6 +764,7 @@ async function handleAirbnbListingDetails(params: any) {
     
     const response = await fetchWithUserAgent(listingUrl.toString());
     const html = await response.text();
+    assertNotDomainHandoff(html, listingUrl.toString());
     const $ = cheerio.load(html);
     
     // Always an array. A consumer doing details.find(...) should never meet an object.
@@ -881,6 +922,7 @@ function log(level: 'info' | 'warn' | 'error', message: string, data?: any) {
 
 log('info', 'Airbnb MCP Server starting', {
   version: VERSION,
+  baseUrl: BASE_URL,
   ignoreRobotsTxt: IGNORE_ROBOTS_TXT,
   disableGeocoding: DISABLE_GEOCODING,
   nodeVersion: process.version,
