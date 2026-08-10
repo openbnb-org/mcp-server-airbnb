@@ -116,6 +116,13 @@ The extension provides the following user-configurable options:
 - **Description**: Skip the Photon/Nominatim geocoding step and let Airbnb resolve the location string on its own. Enabling this restores the pre-PR behavior — every search goes only to `airbnb.com`, no third-party calls.
 - **Recommendation**: Keep disabled unless you specifically need zero third-party outbound traffic. With it enabled, non-US searches could return incorrect results. See [External Services](#external-services).
 
+### Airbnb domain
+- **Type**: String
+- **Environment variable**: `AIRBNB_BASE_URL`
+- **Default**: `https://www.airbnb.com`
+- **Description**: The Airbnb domain to query. Airbnb runs a per-country domain (`airbnb.co.uk`, `airbnb.fr`, …) and hands requests off to the one matching your request origin, so from some regions `www.airbnb.com` never returns a page the server can parse. Point this at your country domain to query it directly.
+- **Recommendation**: Leave unset unless searches fail with a domain-handoff error. See [Country domains](#country-domains).
+
 ## Tools
 
 ### `airbnb_search`
@@ -200,9 +207,31 @@ Each search sends only the `location` string from the request to the geocoder �
 
 If a geocoder is unreachable or returns no result, the server falls back to sending the location string to Airbnb directly, exactly as it did before — so the worst case for an outage is that international searches degrade to the previous (broken) behavior, not that the search fails entirely.
 
+### Country domains
+
+Airbnb runs a separate domain per country (`airbnb.co.uk`, `airbnb.fr`, …) and hands requests off to the one matching the request origin. When that happens, `www.airbnb.com` does not return the page you asked for — it returns a ~1KB stub that POSTs to `/v2/domain_switch/handoff` via JavaScript:
+
+```html
+<body onload="document.forms[0].submit()">
+<form method="POST" action="https://www.airbnb.co.uk/v2/domain_switch/handoff">
+```
+
+It arrives as HTTP 200 rather than a 3xx, so no HTTP client follows it, and it contains none of the data the server parses. Requesting the same path on the country domain returns the full page normally.
+
+The server detects this stub and reports it explicitly, naming the domain Airbnb wants to use:
+
+```
+Airbnb handed this request off to its www.airbnb.co.uk country domain instead of
+serving <url>, so there was no page to parse. Set
+AIRBNB_BASE_URL=https://www.airbnb.co.uk to query that domain directly.
+```
+
+Setting [`AIRBNB_BASE_URL`](#airbnb-domain) resolves it for both `airbnb_search` and `airbnb_listing_details`. The default is unchanged, so this only affects setups that hit the handoff.
+
 ### Error Handling
 - Comprehensive error logging with timestamps
 - Graceful degradation when Airbnb's page structure changes
+- Country-domain handoffs reported distinctly, rather than as a page-structure change
 - Timeout protection for network requests
 - Detailed error messages for troubleshooting
 
@@ -244,16 +273,17 @@ npm run watch
 ### Testing
 
 ```bash
-# Build, then run both suites
+# Build, then run all three suites
 npm test
 ```
 
-`npm test` drives the built server over stdio and calls the tools for real:
+`npm test` runs one offline unit suite, then drives the built server over stdio and calls the tools for real:
 
+- `test-domain-handoff.js` — country-domain handoff detection against a captured stub, including the cases that must *not* be treated as a handoff. No network required
 - `test-extension.js` — MCP handshake, tool listing, a search, listing details, and the geocoding paths (Photon, Nominatim fallback)
 - `test-amenities.js` — amenity extraction across several live listings, checking that amenities Airbnb strikes through never appear as ones the listing offers
 
-Both hit `airbnb.com` and the geocoders over the network, so they need connectivity and can fail if Airbnb changes its page structure — that's the point of them, but it also means they aren't suitable as an unattended CI gate.
+The latter two hit `airbnb.com` and the geocoders over the network, so they need connectivity and can fail if Airbnb changes its page structure — that's the point of them, but it also means they aren't suitable as an unattended CI gate. They also assume `airbnb.com` serves you a parseable page; from a region where Airbnb hands off to a country domain, set `AIRBNB_BASE_URL` before running them. `test-domain-handoff.js` is offline and deterministic, so it is safe in CI.
 
 The server can also be run directly:
 
@@ -263,6 +293,9 @@ node dist/index.js
 
 # Run with robots.txt ignored (for testing)
 node dist/index.js --ignore-robots-txt
+
+# Run against a country domain (see Country domains)
+AIRBNB_BASE_URL=https://www.airbnb.co.uk node dist/index.js
 ```
 
 ## Legal and Ethical Considerations

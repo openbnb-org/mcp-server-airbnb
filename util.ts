@@ -175,6 +175,58 @@ export function keyAmenityGroups(section: any): any {
   return { ...section, seeAllAmenitiesGroups: keyed };
 }
 
+export const DEFAULT_BASE_URL = "https://www.airbnb.com";
+
+/**
+ * Normalize a configured Airbnb domain to a bare origin, so that a trailing slash
+ * or a stray path can't produce URLs like "https://www.airbnb.co.uk//s/...".
+ * Returns null when the value can't be used as a base URL, letting the caller
+ * report it and fall back to the default rather than failing at request time.
+ */
+export function normalizeBaseUrl(value: string | undefined | null): string | null {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) return null;
+
+  try {
+    const url = new URL(trimmed);
+    // A scheme-less value like "www.airbnb.co.uk" parses as the "www.airbnb.co.uk:"
+    // protocol rather than failing, so check the protocol explicitly.
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Airbnb runs a per-country domain (airbnb.co.uk, airbnb.fr, ...) and hands off to
+ * the one matching the request origin. When it does, the response is not the page
+ * we asked for: it's a ~1KB stub that POSTs a payload to /v2/domain_switch/handoff
+ * via JS. It arrives as HTTP 200 rather than a 3xx, so no HTTP client follows it,
+ * and it contains none of the data the parsers look for — which surfaces as a
+ * misleading "page structure may have changed" error.
+ *
+ * Returns the origin Airbnb wants to serve instead (e.g. "https://www.airbnb.co.uk"),
+ * or null if this isn't a handoff stub.
+ */
+export function detectDomainHandoff(html: string): string | null {
+  // The stub is ~1KB; a real search or listing page is ~1MB. Bailing early keeps
+  // the regex off megabyte-sized pages and avoids matching a page that merely
+  // mentions the handoff path.
+  if (typeof html !== "string" || html.length > 8192) return null;
+
+  const match = html.match(
+    /<form[^>]+action="(https?:\/\/[^"]*\/v2\/domain_switch\/handoff)"/i
+  );
+  if (!match) return null;
+
+  try {
+    return new URL(match[1]).origin;
+  } catch {
+    return null;
+  }
+}
+
 export function extractHighlights(pdp: any): any | null {
   const highlights = pdp?.highlights;
   if (!Array.isArray(highlights) || highlights.length === 0) return null;
