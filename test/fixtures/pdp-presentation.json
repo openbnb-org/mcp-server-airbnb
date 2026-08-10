@@ -1,0 +1,183 @@
+{
+  "_comment": "Shapes of niobeClientData[i][1].data.node.pdpPresentation. 'healthy' is trimmed from a real listing payload; the others are synthesized to exercise specific edge cases. Real entries carry a string operation-name key at index 0, not null.",
+
+  "healthy": {
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", { "data": { "presentation": {} } }],
+      ["StaysPdpReviewsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "title": "What this place offers",
+                "seeAllAmenitiesGroups": [
+                  {
+                    "__typename": "AmenityItemsGroup",
+                    "title": "Heating and cooling",
+                    "amenities": [
+                      { "available": true, "title": "Central air conditioning", "subtitle": { "text": "" } },
+                      { "available": true, "title": "Ceiling fan", "subtitle": { "text": "" } }
+                    ]
+                  },
+                  {
+                    "__typename": "AmenityItemsGroup",
+                    "title": "Not included",
+                    "amenities": [
+                      { "available": false, "title": "Dryer", "subtitle": { "text": "" } },
+                      { "available": false, "title": "Hot water", "subtitle": { "text": "" } }
+                    ]
+                  }
+                ]
+              },
+              "highlights": [
+                { "title": "Dive right in", "subtitle": "This is one of the few places in the area with a pool." },
+                { "title": "Peace and quiet" }
+              ]
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "amenitiesOnly": {
+    "_comment": "Highlights have moved or vanished, amenities are fine. Partial extraction must still return the amenities.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "title": "What this place offers",
+                "seeAllAmenitiesGroups": [
+                  {
+                    "title": "Heating and cooling",
+                    "amenities": [{ "available": true, "title": "AC - split type ductless system" }]
+                  }
+                ]
+              },
+              "highlights": null
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "partiallyMalformedGroups": {
+    "_comment": "One amenity group is garbage. The healthy groups around it must survive.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "seeAllAmenitiesGroups": [
+                  { "title": "Bathroom", "amenities": [{ "available": true, "title": "Hair dryer" }] },
+                  { "title": "Broken group", "amenities": "this should be an array" },
+                  { "title": "Kitchen", "amenities": [{ "available": true, "title": "Oven" }] }
+                ]
+              }
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "noPdpBranch": {
+    "_comment": "Airbnb moved the branch again. Extraction must return null, not throw.",
+    "niobeClientData": [["StaysPdpSectionsQuery", { "data": { "presentation": {} } }]]
+  },
+
+  "subtitleShapes": {
+    "_comment": "Airbnb has shipped amenity and highlight subtitles as both a plain string and a { text } object. Both shapes must produce the same label.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "amenities": {
+                "seeAllAmenitiesGroups": [
+                  {
+                    "title": "Bathroom",
+                    "amenities": [
+                      { "available": true, "title": "Shampoo", "subtitle": "Body wash" },
+                      { "available": true, "title": "Hair dryer", "subtitle": { "text": "1200W" } }
+                    ]
+                  }
+                ]
+              },
+              "highlights": [
+                { "title": "Great location", "subtitle": "Walk to the beach" },
+                { "title": "Self check-in", "subtitle": { "text": "Check yourself in with the keypad." } }
+              ]
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "highlightsNewShape": {
+    "_comment": "Live payload shape observed 2025-08 on listing 53610715: headline/body are { __typename: 'LocalizedContent', localizedContent: '...' } objects, not plain strings.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "highlights": [
+                {
+                  "__typename": "ListingPdpHighlight",
+                  "type": "LISTING_GUEST_FAVORITE",
+                  "headline": { "__typename": "LocalizedContent", "localizedContent": "Top 10% of homes" },
+                  "body": { "__typename": "LocalizedContent", "localizedContent": "This home is highly ranked based on ratings, reviews, and reliability." },
+                  "icon": { "__typename": "IconWrapper", "iconContent": "SYSTEM_GOLDEN_TROPHY" }
+                },
+                {
+                  "__typename": "ListingPdpHighlight",
+                  "type": "POOL",
+                  "headline": { "__typename": "LocalizedContent", "localizedContent": "Dive right in" },
+                  "body": { "__typename": "LocalizedContent", "localizedContent": "This is one of the few places in the area with a pool." },
+                  "icon": { "__typename": "IconWrapper", "iconContent": "SYSTEM_POOL" }
+                },
+                {
+                  "__typename": "ListingPdpHighlight",
+                  "type": "QUIET",
+                  "headline": { "__typename": "LocalizedContent", "localizedContent": "Peace and quiet" },
+                  "icon": { "__typename": "IconWrapper", "iconContent": "SYSTEM_QUIET" }
+                },
+                {
+                  "__typename": "ListingPdpHighlight",
+                  "type": "PARKING",
+                  "headline": { "__typename": "LocalizedContent", "localizedContent": "Free parking" },
+                  "body": { "__typename": "LocalizedContent", "localizedContent": "Free parking on premises" },
+                  "icon": { "__typename": "IconWrapper", "iconContent": "SYSTEM_PARKING" }
+                }
+              ]
+            }
+          }
+        }
+      }]
+    ]
+  },
+
+  "highlightsMixed": {
+    "_comment": "Edge cases: one item has neither headline nor title (must be skipped), one has headline only, one has title only (legacy). Tests that both shapes coexist and the null-title guard still fires.",
+    "niobeClientData": [
+      ["StaysPdpSectionsQuery", {
+        "data": {
+          "node": {
+            "pdpPresentation": {
+              "highlights": [
+                { "__typename": "PdpHighlight", "type": "UNKNOWN" },
+                { "headline": "Great for families" },
+                { "title": "Superhost" }
+              ]
+            }
+          }
+        }
+      }]
+    ]
+  }
+}

@@ -244,11 +244,18 @@ npm run watch
 ### Testing
 
 ```bash
-# Build, then run both suites
+# Build, then run the offline suite
 npm test
 ```
 
-`npm test` drives the built server over stdio and calls the tools for real:
+`npm test` runs the fixture-backed unit suite under `test/*.test.mjs` — no network access, safe for CI and for every install.
+
+```bash
+# Build, then drive the built server over stdio against the real site
+npm run test:live
+```
+
+`npm run test:live` calls the tools for real:
 
 - `test-extension.js` — MCP handshake, tool listing, a search, listing details, and the geocoding paths (Photon, Nominatim fallback)
 - `test-amenities.js` — amenity extraction across several live listings, checking that amenities Airbnb strikes through never appear as ones the listing offers
