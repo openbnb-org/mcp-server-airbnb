@@ -1,4 +1,5 @@
 [![downloads](https://img.shields.io/npm/dm/@openbnb/mcp-server-airbnb)](https://www.npmjs.com/package/@openbnb/mcp-server-airbnb)
+[![LightNow capabilities](https://lightnow.ai/badge/io.github.openbnb-org/mcp-server-airbnb)](https://lightnow.ai/servers/io.github.openbnb-org/mcp-server-airbnb)
 
 # Airbnb Search & Listings - MCP Bundle (MCPB)
 
