@@ -12,6 +12,7 @@ import {
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, keyAmenityGroups } from "./util.js";
+import { validateSearchParams, validateListingParams, Throttle, TtlCache } from "./guards.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -149,6 +150,24 @@ const AIRBNB_TOOLS = [
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const BASE_URL = "https://www.airbnb.com";
 
+// Politeness and caching.
+// - Airbnb requests are spaced out so an agent firing several searches in a row does not hammer the site.
+// - Nominatim's usage policy allows at most ~1 request/second, hence the dedicated throttle.
+// - Geocoding results are stable, so they are cached for a day; page results for a few minutes.
+const envMs = (name: string, fallback: number) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+};
+const airbnbThrottle = new Throttle(envMs("AIRBNB_MIN_INTERVAL_MS", 1000));
+const nominatimThrottle = new Throttle(1100);
+
+interface GeoBox {
+  ne_lat: string; ne_lng: string; sw_lat: string; sw_lng: string;
+  displayName: string;
+}
+const geocodeCache = new TtlCache<GeoBox>(24 * 60 * 60 * 1000, 500);
+const responseCache = new TtlCache<string>(envMs("AIRBNB_CACHE_TTL_MS", 5 * 60 * 1000), 100);
+
 // Geocode location using Photon (fast, no rate limits) with Nominatim fallback.
 // This bypasses Airbnb's broken server-side geocoding for non-US locations.
 // Photon doesn't rank by importance, so we fetch multiple results and prefer
@@ -171,10 +190,14 @@ function pickBestPhotonFeature(features: any[]): any | null {
   });
 }
 
-async function geocodeLocation(location: string): Promise<{
-  ne_lat: string; ne_lng: string; sw_lat: string; sw_lng: string;
-  displayName: string;
-} | null> {
+async function geocodeLocation(location: string): Promise<GeoBox | null> {
+  const cacheKey = location.trim().toLowerCase();
+  const cachedBox = geocodeCache.get(cacheKey);
+  if (cachedBox) {
+    log('info', 'Geocoding served from cache', { location });
+    return cachedBox;
+  }
+
   let extent: number[] | null = null;
   let displayName = location;
 
@@ -228,6 +251,7 @@ async function geocodeLocation(location: string): Promise<{
   if (!extent) {
     try {
       log('info', 'Falling back to Nominatim for geocoding', { location });
+      await nominatimThrottle.wait();
       const nomController = new AbortController();
       const nomTimeout = setTimeout(() => nomController.abort(), 5000);
       const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1`;
@@ -284,6 +308,7 @@ async function geocodeLocation(location: string): Promise<{
   };
 
   log('info', 'Geocoded successfully (with 25% padding)', { location, coords });
+  geocodeCache.set(cacheKey, coords);
   return coords;
 }
 
@@ -537,9 +562,17 @@ async function handleAirbnbSearch(params: any) {
     // }
   };
 
+  const searchCacheKey = searchUrl.toString();
+  const cachedSearch = responseCache.get(searchCacheKey);
+  if (cachedSearch) {
+    log('info', 'Search served from cache', { url: searchCacheKey });
+    return { content: [{ type: "text", text: cachedSearch }], isError: false };
+  }
+
   try {
     log('info', 'Performing Airbnb search', { location, checkin, checkout, adults, children });
-    
+
+    await airbnbThrottle.wait();
     const response = await fetchWithUserAgent(searchUrl.toString());
     const html = await response.text();
     const $ = cheerio.load(html);
@@ -601,14 +634,14 @@ async function handleAirbnbSearch(params: any) {
       };
     }
 
+    const searchText = JSON.stringify({
+      searchUrl: searchUrl.toString(),
+      ...staysSearchResults
+    }, null, 2);
+    responseCache.set(searchCacheKey, searchText);
+
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify({
-          searchUrl: searchUrl.toString(),
-          ...staysSearchResults
-        }, null, 2)
-      }],
+      content: [{ type: "text", text: searchText }],
       isError: false
     };
   } catch (error) {
@@ -719,9 +752,17 @@ async function handleAirbnbListingDetails(params: any) {
     //"AVAILABLITY_CALENDAR_DEFAULT": true,
   };
 
+  const listingCacheKey = listingUrl.toString();
+  const cachedListing = responseCache.get(listingCacheKey);
+  if (cachedListing) {
+    log('info', 'Listing details served from cache', { url: listingCacheKey });
+    return { content: [{ type: "text", text: cachedListing }], isError: false };
+  }
+
   try {
     log('info', 'Fetching listing details', { id, checkin, checkout, adults, children });
-    
+
+    await airbnbThrottle.wait();
     const response = await fetchWithUserAgent(listingUrl.toString());
     const html = await response.text();
     const $ = cheerio.load(html);
@@ -823,14 +864,14 @@ async function handleAirbnbListingDetails(params: any) {
       };
     }
 
+    const listingText = JSON.stringify({
+      listingUrl: listingUrl.toString(),
+      details: details
+    }, null, 2);
+    responseCache.set(listingCacheKey, listingText);
+
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify({
-          listingUrl: listingUrl.toString(),
-          details: details
-        }, null, 2)
-      }],
+      content: [{ type: "text", text: listingText }],
       isError: false
     };
   } catch (error) {
@@ -918,12 +959,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     let result;
     switch (request.params.name) {
       case "airbnb_search": {
-        result = await handleAirbnbSearch(request.params.arguments);
+        // Throws ValidationError, which the catch below returns as an isError result
+        // carrying a precise message the calling model can act on.
+        result = await handleAirbnbSearch(validateSearchParams(request.params.arguments));
         break;
       }
 
       case "airbnb_listing_details": {
-        result = await handleAirbnbListingDetails(request.params.arguments);
+        result = await handleAirbnbListingDetails(validateListingParams(request.params.arguments));
         break;
       }
 

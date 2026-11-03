@@ -116,6 +116,17 @@ The extension provides the following user-configurable options:
 - **Description**: Skip the Photon/Nominatim geocoding step and let Airbnb resolve the location string on its own. Enabling this restores the pre-PR behavior — every search goes only to `airbnb.com`, no third-party calls.
 - **Recommendation**: Keep disabled unless you specifically need zero third-party outbound traffic. With it enabled, non-US searches could return incorrect results. See [External Services](#external-services).
 
+### Request spacing and caching
+- **Environment variable**: `AIRBNB_MIN_INTERVAL_MS`
+- **Default**: `1000`
+- **Description**: Minimum delay between two requests sent to `airbnb.com`. Concurrent tool calls queue up behind each other instead of firing together. Set to `0` to disable. Requests to Nominatim are always spaced by at least 1.1 s, as its usage policy requires.
+- **Environment variable**: `AIRBNB_CACHE_TTL_MS`
+- **Default**: `300000` (5 minutes)
+- **Description**: How long an identical search or listing request is served from memory instead of hitting Airbnb again. Set to `0` to disable. Geocoding results are cached for 24 hours.
+
+### Input validation
+Tool arguments are validated before any request is made, and a problem comes back as an error message the calling model can act on: dates must be real `YYYY-MM-DD` dates with `checkout` after `checkin`, guest counts must be integers between 0 and 50, `minPrice` must not exceed `maxPrice`, and the listing `id` must be numeric.
+
 ## Tools
 
 ### `airbnb_search`
