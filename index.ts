@@ -11,7 +11,20 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { cleanObject, flattenArraysInObject, pickBySchema, diagnoseJsonPath, findPdpPresentation, extractAmenities, extractHighlights, keyAmenityGroups } from "./util.js";
+import {
+  cleanObject,
+  flattenArraysInObject,
+  pickBySchema,
+  diagnoseJsonPath,
+  findPdpPresentation,
+  extractAmenities,
+  extractHighlights,
+  keyAmenityGroups,
+  detectDomainHandoff,
+  normalizeBaseUrl,
+  DEFAULT_BASE_URL,
+  rewriteUrlOrigin,
+} from "./util.js";
 import robotsParser from "robots-parser";
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -147,7 +160,16 @@ const AIRBNB_TOOLS = [
 
 // Utility functions
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-const BASE_URL = "https://www.airbnb.com";
+
+const rawConfiguredBaseUrl = process.env.AIRBNB_BASE_URL;
+const normalizedConfiguredBaseUrl = normalizeBaseUrl(rawConfiguredBaseUrl);
+if (rawConfiguredBaseUrl && rawConfiguredBaseUrl.trim() !== "" && !normalizedConfiguredBaseUrl) {
+  log('error', 'Ignoring invalid AIRBNB_BASE_URL, falling back to the default domain', {
+    value: rawConfiguredBaseUrl,
+  });
+}
+const CONFIGURED_BASE_URL = normalizedConfiguredBaseUrl ?? DEFAULT_BASE_URL;
+let activeBaseUrl = CONFIGURED_BASE_URL;
 
 // Geocode location using Photon (fast, no rate limits) with Nominatim fallback.
 // This bypasses Airbnb's broken server-side geocoding for non-US locations.
@@ -303,23 +325,23 @@ const IGNORE_ROBOTS_TXT = process.env.IGNORE_ROBOTS_TXT === "true" || process.ar
 const DISABLE_GEOCODING = process.env.DISABLE_GEOCODING === "true";
 
 const robotsErrorMessage = "This path is disallowed by Airbnb's robots.txt to this User-agent. You may or may not want to run the server with '--ignore-robots-txt' args"
-let robotsTxtContent = "";
+const robotsTxtByOrigin = new Map<string, string>();
 
 // Enhanced robots.txt fetch with timeout and error handling
-async function fetchRobotsTxt() {
+async function fetchRobotsTxt(origin: string = activeBaseUrl) {
   if (IGNORE_ROBOTS_TXT) {
     log('info', 'Skipping robots.txt fetch (ignored by configuration)');
     return;
   }
 
   try {
-    log('info', 'Fetching robots.txt from Airbnb');
+    log('info', 'Fetching robots.txt from Airbnb', { origin });
     
     // Add timeout to prevent hanging
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
     
-    const response = await fetch(`${BASE_URL}/robots.txt`, {
+    const response = await fetch(`${origin}/robots.txt`, {
       headers: {
         "User-Agent": USER_AGENT,
       },
@@ -332,37 +354,82 @@ async function fetchRobotsTxt() {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     
-    robotsTxtContent = await response.text();
-    log('info', 'Successfully fetched robots.txt');
+    const content = await response.text();
+    robotsTxtByOrigin.set(origin, content);
+    log('info', 'Successfully fetched robots.txt', { origin });
   } catch (error) {
     log('warn', 'Error fetching robots.txt, assuming all paths allowed', {
+      origin,
       error: error instanceof Error ? error.message : String(error)
     });
-    robotsTxtContent = ""; // Empty robots.txt means everything is allowed
+    robotsTxtByOrigin.set(origin, ""); // Empty robots.txt means everything is allowed
   }
 }
 
-function isPathAllowed(path: string): boolean {  
+function isPathAllowed(path: string, origin: string = activeBaseUrl): boolean {
+  const robotsTxtContent = robotsTxtByOrigin.get(origin);
   if (!robotsTxtContent) {
     return true; // If we couldn't fetch robots.txt, assume allowed
   }
 
   try {
-    const robots = robotsParser(`${BASE_URL}/robots.txt`, robotsTxtContent);
+    const robots = robotsParser(`${origin}/robots.txt`, robotsTxtContent);
     const allowed = robots.isAllowed(path, USER_AGENT);
     
     if (!allowed) {
-      log('warn', 'Path disallowed by robots.txt', { path, userAgent: USER_AGENT });
+      log('warn', 'Path disallowed by robots.txt', { origin, path, userAgent: USER_AGENT });
     }
     
     return allowed;
   } catch (error) {
     log('warn', 'Error parsing robots.txt, allowing path', {
+      origin,
       path,
       error: error instanceof Error ? error.message : String(error)
     });
     return true; // If parsing fails, be permissive
   }
+}
+
+async function fetchAirbnbPage(
+  targetUrl: URL,
+  ignoreRobotsText: boolean
+): Promise<{ html: string; finalUrl: string; baseUrl: string }> {
+  const response = await fetchWithUserAgent(targetUrl.toString());
+  const html = await response.text();
+  const handoffOrigin = detectDomainHandoff(html);
+
+  if (handoffOrigin && handoffOrigin !== targetUrl.origin) {
+    log('info', 'Airbnb served country-domain handoff stub; switching domain and retrying', {
+      from: targetUrl.origin,
+      to: handoffOrigin,
+      url: targetUrl.toString(),
+    });
+    activeBaseUrl = handoffOrigin;
+
+    if (!ignoreRobotsText && !IGNORE_ROBOTS_TXT) {
+      if (!robotsTxtByOrigin.has(handoffOrigin)) {
+        await fetchRobotsTxt(handoffOrigin);
+      }
+      if (!isPathAllowed(targetUrl.pathname + targetUrl.search, handoffOrigin)) {
+        throw new Error(robotsErrorMessage);
+      }
+    }
+
+    const retryUrl = rewriteUrlOrigin(targetUrl.toString(), handoffOrigin);
+    const retryResponse = await fetchWithUserAgent(retryUrl);
+    const retryHtml = await retryResponse.text();
+
+    if (detectDomainHandoff(retryHtml) !== null) {
+      throw new Error(
+        `Airbnb handed this request off to ${new URL(handoffOrigin).host} instead of serving ${targetUrl.toString()}, and retrying on ${handoffOrigin} did not return a content page. Set AIRBNB_BASE_URL=${handoffOrigin} to query that domain directly.`
+      );
+    }
+
+    return { html: retryHtml, finalUrl: retryUrl, baseUrl: handoffOrigin };
+  }
+
+  return { html, finalUrl: targetUrl.toString(), baseUrl: targetUrl.origin };
 }
 
 async function fetchWithUserAgent(url: string, timeout: number = 30000) {
@@ -423,7 +490,7 @@ async function handleAirbnbSearch(params: any) {
   const slug = location
     .replace(/,\s*/g, "--")   // "Paris, France" → "Paris--France"
     .replace(/\s+/g, "-");    // remaining spaces → single dash
-  const searchUrl = new URL(`${BASE_URL}/s/${encodeURIComponent(slug)}/homes`);
+  const searchUrl = new URL(`${activeBaseUrl}/s/${encodeURIComponent(slug)}/homes`);
   
   // Add placeId
   if (placeId) searchUrl.searchParams.append("place_id", placeId);
@@ -475,7 +542,7 @@ async function handleAirbnbSearch(params: any) {
 
   // Check if path is allowed by robots.txt
   const path = searchUrl.pathname + searchUrl.search;
-  if (!ignoreRobotsText && !isPathAllowed(path)) {
+  if (!ignoreRobotsText && !isPathAllowed(path, searchUrl.origin)) {
     log('warn', 'Search blocked by robots.txt', { path, url: searchUrl.toString() });
     return {
       content: [{
@@ -540,8 +607,7 @@ async function handleAirbnbSearch(params: any) {
   try {
     log('info', 'Performing Airbnb search', { location, checkin, checkout, adults, children });
     
-    const response = await fetchWithUserAgent(searchUrl.toString());
-    const html = await response.text();
+    const { html, finalUrl, baseUrl } = await fetchAirbnbPage(searchUrl, ignoreRobotsText);
     const $ = cheerio.load(html);
     
     let staysSearchResults: any = {};
@@ -567,7 +633,7 @@ async function handleAirbnbSearch(params: any) {
           .map((result: any) => flattenArraysInObject(pickBySchema(result, allowSearchResultSchema)))
           .map((result: any) => {
             const id = atob(result.demandStayListing.id).split(":")[1];
-            return {id, url: `${BASE_URL}/rooms/${id}`, ...result }
+            return {id, url: `${baseUrl}/rooms/${id}`, ...result }
           }),
         paginationInfo: results.paginationInfo
       }
@@ -584,7 +650,7 @@ async function handleAirbnbSearch(params: any) {
       log('error', 'Failed to parse search results', {
         error: parseError instanceof Error ? parseError.message : String(parseError),
         diagnosis,
-        url: searchUrl.toString()
+        url: finalUrl
       });
       
       return {
@@ -594,7 +660,7 @@ async function handleAirbnbSearch(params: any) {
             error: "Failed to parse search results from Airbnb. The page structure may have changed.",
             details: parseError instanceof Error ? parseError.message : String(parseError),
             diagnosis,
-            searchUrl: searchUrl.toString()
+            searchUrl: finalUrl
           }, null, 2)
         }],
         isError: true
@@ -605,7 +671,7 @@ async function handleAirbnbSearch(params: any) {
       content: [{
         type: "text",
         text: JSON.stringify({
-          searchUrl: searchUrl.toString(),
+          searchUrl: finalUrl,
           ...staysSearchResults
         }, null, 2)
       }],
@@ -644,7 +710,7 @@ async function handleAirbnbListingDetails(params: any) {
   } = params;
 
   // Build listing URL
-  const listingUrl = new URL(`${BASE_URL}/rooms/${id}`);
+  const listingUrl = new URL(`${activeBaseUrl}/rooms/${id}`);
   
   // Add query parameters
   if (checkin) listingUrl.searchParams.append("check_in", checkin);
@@ -666,7 +732,7 @@ async function handleAirbnbListingDetails(params: any) {
 
   // Check if path is allowed by robots.txt
   const path = listingUrl.pathname + listingUrl.search;
-  if (!ignoreRobotsText && !isPathAllowed(path)) {
+  if (!ignoreRobotsText && !isPathAllowed(path, listingUrl.origin)) {
     log('warn', 'Listing details blocked by robots.txt', { path, url: listingUrl.toString() });
     return {
       content: [{
@@ -722,8 +788,7 @@ async function handleAirbnbListingDetails(params: any) {
   try {
     log('info', 'Fetching listing details', { id, checkin, checkout, adults, children });
     
-    const response = await fetchWithUserAgent(listingUrl.toString());
-    const html = await response.text();
+    const { html, finalUrl } = await fetchAirbnbPage(listingUrl, ignoreRobotsText);
     const $ = cheerio.load(html);
     
     // Always an array. A consumer doing details.find(...) should never meet an object.
@@ -806,7 +871,7 @@ async function handleAirbnbListingDetails(params: any) {
         error: parseError instanceof Error ? parseError.message : String(parseError),
         diagnosis,
         id,
-        url: listingUrl.toString()
+        url: finalUrl
       });
       
       return {
@@ -816,7 +881,7 @@ async function handleAirbnbListingDetails(params: any) {
             error: "Failed to parse listing details from Airbnb. The page structure may have changed.",
             details: parseError instanceof Error ? parseError.message : String(parseError),
             diagnosis,
-            listingUrl: listingUrl.toString()
+            listingUrl: finalUrl
           }, null, 2)
         }],
         isError: true
@@ -827,7 +892,7 @@ async function handleAirbnbListingDetails(params: any) {
       content: [{
         type: "text",
         text: JSON.stringify({
-          listingUrl: listingUrl.toString(),
+          listingUrl: finalUrl,
           details: details
         }, null, 2)
       }],
@@ -881,6 +946,7 @@ function log(level: 'info' | 'warn' | 'error', message: string, data?: any) {
 
 log('info', 'Airbnb MCP Server starting', {
   version: VERSION,
+  baseUrl: activeBaseUrl,
   ignoreRobotsTxt: IGNORE_ROBOTS_TXT,
   disableGeocoding: DISABLE_GEOCODING,
   nodeVersion: process.version,
@@ -911,8 +977,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     });
     
     // Ensure robots.txt is loaded
-    if (!robotsTxtContent && !IGNORE_ROBOTS_TXT) {
-      await fetchRobotsTxt();
+    if (!robotsTxtByOrigin.has(activeBaseUrl) && !IGNORE_ROBOTS_TXT) {
+      await fetchRobotsTxt(activeBaseUrl);
     }
 
     let result;
@@ -977,6 +1043,7 @@ async function runServer() {
     
     log('info', 'Airbnb MCP Server running on stdio', {
       version: VERSION,
+      baseUrl: activeBaseUrl,
       robotsRespected: !IGNORE_ROBOTS_TXT
     });
     

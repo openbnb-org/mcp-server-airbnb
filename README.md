@@ -116,6 +116,13 @@ The extension provides the following user-configurable options:
 - **Description**: Skip the Photon/Nominatim geocoding step and let Airbnb resolve the location string on its own. Enabling this restores the pre-PR behavior — every search goes only to `airbnb.com`, no third-party calls.
 - **Recommendation**: Keep disabled unless you specifically need zero third-party outbound traffic. With it enabled, non-US searches could return incorrect results. See [External Services](#external-services).
 
+### Airbnb base URL
+- **Type**: String
+- **Environment variable**: `AIRBNB_BASE_URL`
+- **Default**: `https://www.airbnb.com`
+- **Description**: Optional Airbnb country-domain origin (for example `https://www.airbnb.co.in` or `https://www.airbnb.co.uk`). When unset, the server starts on `https://www.airbnb.com` and automatically detects Airbnb's country-domain handoff stub (`<form action="https://www.<country-domain>/v2/domain_switch/handoff">`), switches the active domain (and fetches `robots.txt` for that origin if needed), and retries the request.
+- **Recommendation**: Leave blank unless you want to pin a specific Airbnb country domain from startup. Invalid non-empty values are logged and fall back to `https://www.airbnb.com`.
+
 ## Tools
 
 ### `airbnb_search`
@@ -248,8 +255,9 @@ npm run watch
 npm test
 ```
 
-`npm test` drives the built server over stdio and calls the tools for real:
+`npm test` runs the offline unit suite and drives the built server over stdio for live integration checks:
 
+- `test-domain-handoff.js` — offline unit tests for country-domain handoff detection, `AIRBNB_BASE_URL` normalization, Airbnb origin validation, and URL origin rewriting
 - `test-extension.js` — MCP handshake, tool listing, a search, listing details, and the geocoding paths (Photon, Nominatim fallback)
 - `test-amenities.js` — amenity extraction across several live listings, checking that amenities Airbnb strikes through never appear as ones the listing offers
 
