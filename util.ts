@@ -192,3 +192,60 @@ export function extractHighlights(pdp: any): any | null {
 
   return mapped.length ? { highlights: mapped } : null;
 }
+
+export const DEFAULT_BASE_URL = "https://www.airbnb.com";
+
+export function isAirbnbOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return false;
+    }
+    return (
+      /^(?:[a-z0-9-]+\.)*airbnb\.[a-z]{2,}(?:\.[a-z]{2,})?$/i.test(url.hostname) ||
+      url.hostname === "localhost" ||
+      url.hostname === "127.0.0.1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeBaseUrl(value: string | undefined | null): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function detectDomainHandoff(html: string): string | null {
+  if (typeof html !== "string" || html.length > 8192) {
+    return null;
+  }
+  const match = html.match(/<form[^>]+action="(https?:\/\/[^"]*\/v2\/domain_switch\/handoff)"/i);
+  if (!match) {
+    return null;
+  }
+  try {
+    const origin = new URL(match[1]).origin;
+    return isAirbnbOrigin(origin) ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
+export function rewriteUrlOrigin(urlStr: string, newOrigin: string): string {
+  const u = new URL(urlStr);
+  const base = new URL(newOrigin);
+  u.protocol = base.protocol;
+  u.host = base.host;
+  return u.toString();
+}

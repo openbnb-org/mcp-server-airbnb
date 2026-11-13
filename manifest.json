@@ -35,7 +35,8 @@
       "env": {
         "NODE_ENV": "production",
         "IGNORE_ROBOTS_TXT": "${user_config.ignore_robots_txt}",
-        "DISABLE_GEOCODING": "${user_config.disable_geocoding}"
+        "DISABLE_GEOCODING": "${user_config.disable_geocoding}",
+        "AIRBNB_BASE_URL": "${user_config.airbnb_base_url}"
       }
     }
   },
@@ -75,6 +76,13 @@
       "title": "Disable third-party geocoding",
       "description": "Skip the Photon/Nominatim geocoding step and let Airbnb resolve location strings on its own. Eliminates third-party outbound calls but causes non-US searches (e.g. 'Paris, France') to return wrong results.",
       "default": false,
+      "required": false
+    },
+    "airbnb_base_url": {
+      "type": "string",
+      "title": "Airbnb base URL",
+      "description": "Optional Airbnb country-domain origin (e.g. https://www.airbnb.co.in). Leave blank to start on https://www.airbnb.com and auto-switch when Airbnb serves a country-domain handoff.",
+      "default": "",
       "required": false
     }
   }
